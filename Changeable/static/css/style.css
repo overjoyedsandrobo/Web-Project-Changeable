@@ -1,0 +1,34 @@
+body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    background-color: #111;
+    color: #eee;
+}
+
+header {
+    padding: 1rem 2rem;
+    border-bottom: 1px solid #333;
+}
+
+main {
+    display: flex;
+    height: calc(100vh - 80px);
+}
+
+#canvas-container {
+    flex: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#generation-canvas {
+    background: #000;
+    border: 1px solid #333;
+}
+
+#controls {
+    flex: 1;
+    border-left: 1px solid #333;
+    padding: 1rem;
+}
