@@ -8,6 +8,10 @@ const clearBtn = document.getElementById("clearBtn");
 
 const legendEl = document.getElementById("legend");
 
+const generateBtn = document.getElementById("generateBtn");
+let generatedLines = [];
+
+
 let cols = parseInt(colsInput.value, 10);
 let rows = parseInt(rowsInput.value, 10);
 let ruleMax = parseInt(ruleMaxInput.value, 10);
@@ -66,9 +70,12 @@ function applySettings() {
   ruleMaxInput.value = ruleMax;
 
   grid = createGrid(rows, cols);
+  generatedLines = [];
+
   hoverCell = null;
+
   draw();
-  renderLegend();
+  renderLegend(); 
 }
 
 // --- Rendering ---
@@ -130,6 +137,16 @@ function draw() {
       cellH - 2
     );
   }
+  // Draw generated structure
+  ctx.strokeStyle = "#e5e7eb";
+  ctx.lineWidth = 2;
+
+  for (const [x1, y1, x2, y2] of generatedLines) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  }
 }
 function renderLegend() {
   legendEl.innerHTML = "";
@@ -167,6 +184,48 @@ function cycleCell(x, y) {
   grid[y][x] = (grid[y][x] + 1) % ruleMax;
 }
 
+function generateStructure() {
+  generatedLines = [];
+
+  const cellW = canvas.width / cols;
+  const cellH = canvas.height / rows;
+
+  // Seed: start from all non-zero cells (simple & effective)
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const rule = grid[y][x];
+      if (rule === 0) continue;
+
+      const cx = x * cellW + cellW / 2;
+      const cy = y * cellH + cellH / 2;
+
+      const len = Math.min(cellW, cellH) * 0.8;
+
+      switch (rule) {
+        case 1: // up
+          generatedLines.push([cx, cy, cx, cy - len]);
+          break;
+        case 2: // right
+          generatedLines.push([cx, cy, cx + len, cy]);
+          break;
+        case 3: // down
+          generatedLines.push([cx, cy, cx, cy + len]);
+          break;
+        case 4: // left
+          generatedLines.push([cx, cy, cx - len, cy]);
+          break;
+        case 5: // branch
+          generatedLines.push([cx, cy, cx + len, cy]);
+          generatedLines.push([cx, cy, cx - len, cy]);
+          generatedLines.push([cx, cy, cx, cy - len]);
+          break;
+      }
+    }
+  }
+
+  draw();
+}
+
 // --- Events: hover / click / drag paint ---
 canvas.addEventListener("mousemove", (e) => {
   hoverCell = getCellFromEvent(e);
@@ -198,6 +257,7 @@ window.addEventListener("mouseup", () => {
 
 clearBtn.addEventListener("click", () => {
   grid = createGrid(rows, cols);
+  generatedLines = [];
   draw();
 });
 
@@ -210,3 +270,4 @@ ruleMaxInput.addEventListener("change", applySettings);
 grid = createGrid(rows, cols);
 renderLegend();
 resizeCanvas();
+generateBtn.addEventListener("click", generateStructure);
