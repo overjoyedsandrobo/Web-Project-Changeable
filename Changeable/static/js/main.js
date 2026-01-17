@@ -13,6 +13,11 @@ const stepsInput = document.getElementById("steps");
 const seedModeEl = document.getElementById("seedMode");
 const seedCountInput = document.getElementById("seedCount");
 const showGridEl = document.getElementById("showGrid");
+const seedInput = document.getElementById("seed");
+const saveBtn = document.getElementById("saveBtn");
+const loadBtn = document.getElementById("loadBtn");
+const designData = document.getElementById("designData");
+
 
 let generatedLines = [];
 
@@ -197,48 +202,6 @@ function cycleCell(x, y) {
   grid[y][x] = (grid[y][x] + 1) % ruleMax;
 }
 
-function generateStructure() {
-  generatedLines = [];
-
-  const cellW = canvas.width / cols;
-  const cellH = canvas.height / rows;
-
-  // Seed: start from all non-zero cells (simple & effective)
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const rule = grid[y][x];
-      if (rule === 0) continue;
-
-      const cx = x * cellW + cellW / 2;
-      const cy = y * cellH + cellH / 2;
-
-      const len = Math.min(cellW, cellH) * 0.8;
-
-      switch (rule) {
-        case 1: // up
-          generatedLines.push([cx, cy, cx, cy - len]);
-          break;
-        case 2: // right
-          generatedLines.push([cx, cy, cx + len, cy]);
-          break;
-        case 3: // down
-          generatedLines.push([cx, cy, cx, cy + len]);
-          break;
-        case 4: // left
-          generatedLines.push([cx, cy, cx - len, cy]);
-          break;
-        case 5: // branch
-          generatedLines.push([cx, cy, cx + len, cy]);
-          generatedLines.push([cx, cy, cx - len, cy]);
-          generatedLines.push([cx, cy, cx, cy - len]);
-          break;
-      }
-    }
-  }
-
-  draw();
-}
-
 function randInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -263,11 +226,19 @@ function inBounds(x, y) {
   return x >= 0 && x < cols && y >= 0 && y < rows;
 }
 
-function pickSeeds() {
+function pickSeeds(rng) {
+if (typeof rng !== "function") {
+  console.warn("pickSeeds called without rng; using non-deterministic fallback");
+  rng = mulberry32((Date.now() ^ (Math.random() * 1e9)) >>> 0);
+}
+
   const mode = seedModeEl.value;
 
+  // Always have a safe fallback seed (no recursion)
+  const fallback = [{ x: Math.floor(cols / 2), y: Math.floor(rows / 2), dir: 1 }];
+
   if (mode === "center") {
-    return [{ x: Math.floor(cols / 2), y: Math.floor(rows / 2), dir: 1 }];
+    return fallback;
   }
 
   if (mode === "random") {
@@ -276,7 +247,11 @@ function pickSeeds() {
 
     const seeds = [];
     for (let i = 0; i < count; i++) {
-      seeds.push({ x: randInt(0, cols - 1), y: randInt(0, rows - 1), dir: randInt(0, 3) });
+      seeds.push({
+        x: seededRandInt(rng, 0, cols - 1),
+        y: seededRandInt(rng, 0, rows - 1),
+        dir: seededRandInt(rng, 0, 3),
+      });
     }
     return seeds;
   }
@@ -288,22 +263,27 @@ function pickSeeds() {
       if (grid[y][x] !== 0) seeds.push({ x, y, dir: 1 });
     }
   }
-  // if user hasn't painted anything, fallback to center
-  if (seeds.length === 0) return [{ x: Math.floor(cols / 2), y: Math.floor(rows / 2), dir: 1 }];
-  return seeds;
+
+  // If user hasn't painted anything, return fallback (no recursion)
+  return seeds.length > 0 ? seeds : fallback;
 }
 
 function generateStructure() {
   generatedLines = [];
 
-  const steps = clampInt(stepsInput.value, 1, 64);
+  const steps = clampInt(stepsInput.value, 1, 1000);
   stepsInput.value = steps;
+
+  const seed = clampInt(seedInput.value, 0, 999999999);
+  seedInput.value = seed;
+
+  const rng = mulberry32(seed);
 
   const cellW = canvas.width / cols;
   const cellH = canvas.height / rows;
 
   // Walkers live in grid space, but we draw in canvas space.
-  let walkers = pickSeeds().map(s => ({ ...s }));
+  let walkers = pickSeeds(rng).map(s => ({ ...s }));
 
   // Limit explosion if user uses branch heavily
   const MAX_WALKERS = 600;
@@ -354,6 +334,57 @@ function generateStructure() {
 
   draw();
 }
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let x = Math.imul(t ^ (t >>> 15), 1 | t);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seededRandInt(rng, min, max) {
+  return Math.floor(rng() * (max - min + 1)) + min;
+}
+
+function exportDesign() {
+  return JSON.stringify({
+    cols,
+    rows,
+    ruleMax,
+    seed: clampInt(seedInput.value, 0, 999999999),
+    steps: clampInt(stepsInput.value, 1, 64),
+    seedMode: seedModeEl.value,
+    seedCount: clampInt(seedCountInput.value, 1, 200),
+    grid,
+  });
+}
+
+function importDesign(text) {
+  const obj = JSON.parse(text);
+
+  cols = clampInt(obj.cols, 4, 64);
+  rows = clampInt(obj.rows, 4, 64);
+  ruleMax = clampInt(obj.ruleMax, 2, 12);
+
+  colsInput.value = cols;
+  rowsInput.value = rows;
+  ruleMaxInput.value = ruleMax;
+
+  seedInput.value = clampInt(obj.seed ?? 0, 0, 999999999);
+  stepsInput.value = clampInt(obj.steps ?? 16, 1, 64);
+  seedModeEl.value = obj.seedMode ?? "nonzero";
+  seedCountInput.value = clampInt(obj.seedCount ?? 25, 1, 200);
+
+  grid = obj.grid;
+  generatedLines = [];
+  hoverCell = null;
+
+  renderLegend();
+  resizeCanvas();
+  draw();
+}
 
 // --- Events: hover / click / drag paint ---
 canvas.addEventListener("mousemove", (e) => {
@@ -388,6 +419,18 @@ clearBtn.addEventListener("click", () => {
   grid = createGrid(rows, cols);
   generatedLines = [];
   draw();
+});
+
+saveBtn.addEventListener("click", () => {
+  designData.value = exportDesign();
+});
+
+loadBtn.addEventListener("click", () => {
+  try {
+    importDesign(designData.value);
+  } catch (e) {
+    alert("Invalid design data.");
+  }
 });
 
 // Inputs

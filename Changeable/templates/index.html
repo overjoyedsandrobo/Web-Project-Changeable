@@ -45,9 +45,29 @@
             <div class="control-group">
                 <button id="generateBtn" class="btn">Generate</button>
             </div>
+            
+            <div class="control-group">
+                <label class="label" for="seed">Seed</label>
+                    <input id="seed" type="number" min="0" max="999999999" value="12345" />
+                    <div class="hint">Same grid + same seed = same output.</div>
+                </div>
+
+                <div class="control-group">
+                    <button id="saveBtn" class="btn">Save design</button>
+                </div>
+
+                <div class="control-group">
+                    <button id="loadBtn" class="btn">Load design</button>
+                </div>
+
+                <div class="control-group">
+                    <textarea id="designData" rows="6" style="width:100%; resize:vertical;"></textarea>
+                    <div class="hint">Copy/share this text to reproduce a design.</div>
+                </div>
+
             <div class="control-group">
                 <label class="label" for="steps">Steps</label>
-                <input id="steps" type="number" min="1" max="64" value="16" />
+                <input id="steps" type="number" min="1" max="1000" value="16" />
                 <div class="hint">How long the structure grows.</div>
             </div>
 
