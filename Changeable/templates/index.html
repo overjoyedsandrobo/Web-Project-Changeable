@@ -18,22 +18,32 @@
             <!-- Generation output will go here -->
             <canvas id="generation-canvas"></canvas>
         </div>
-        <div id="status">
-            Grid: 16×16 · Mode: Edit
-        </div>
-
 
         <div id="controls">
             <h2>Controls</h2>
 
             <div class="control-group">
-                <p>Grid Size</p>
-                <!-- slider later -->
+                <label class="label" for="cols">Columns</label>
+                <input id="cols" type="number" min="4" max="64" value="16" />
             </div>
 
             <div class="control-group">
-                <p>Rule Type</p>
-                <!-- buttons later -->
+                <label class="label" for="rows">Rows</label>
+                <input id="rows" type="number" min="4" max="64" value="16" />
+            </div>
+
+            <div class="control-group">
+                <label class="label" for="ruleMax">Rule count</label>
+                <input id="ruleMax" type="number" min="2" max="12" value="6" />
+                <div class="hint">Click cells to cycle rules: 0 → 1 → ...</div>
+            </div>
+
+            <div class="control-group">
+                <button id="clearBtn" class="btn">Clear grid</button>
+            </div>
+
+            <div class="control-group">
+                <div class="legend" id="legend"></div>
             </div>
         </div>
     </main>
