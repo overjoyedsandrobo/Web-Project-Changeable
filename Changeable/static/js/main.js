@@ -9,6 +9,11 @@ const clearBtn = document.getElementById("clearBtn");
 const legendEl = document.getElementById("legend");
 
 const generateBtn = document.getElementById("generateBtn");
+const stepsInput = document.getElementById("steps");
+const seedModeEl = document.getElementById("seedMode");
+const seedCountInput = document.getElementById("seedCount");
+const showGridEl = document.getElementById("showGrid");
+
 let generatedLines = [];
 
 
@@ -96,7 +101,10 @@ function draw() {
   const cellW = canvas.width / cols;
   const cellH = canvas.height / rows;
 
-  // Fill cells based on rule value
+  // Read toggle (default to true if checkbox doesn't exist yet)
+  const showGrid = showGridEl ? showGridEl.checked : true;
+
+  // Fill cells based on rule value (keep this ALWAYS so you can see rules)
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const rule = grid[y][x];
@@ -107,47 +115,52 @@ function draw() {
     }
   }
 
-  // Grid lines (subtle)
-  ctx.strokeStyle = "#1f1f1f";
-  ctx.lineWidth = 1;
+  // Grid lines + hover highlight ONLY if showGrid is enabled
+  if (showGrid) {
+    // Grid lines (subtle)
+    ctx.strokeStyle = "#1f1f1f";
+    ctx.lineWidth = 1;
 
-  for (let x = 0; x <= cols; x++) {
-    ctx.beginPath();
-    ctx.moveTo(Math.round(x * cellW) + 0.5, 0);
-    ctx.lineTo(Math.round(x * cellW) + 0.5, canvas.height);
-    ctx.stroke();
+    for (let x = 0; x <= cols; x++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.round(x * cellW) + 0.5, 0);
+      ctx.lineTo(Math.round(x * cellW) + 0.5, canvas.height);
+      ctx.stroke();
+    }
+
+    for (let y = 0; y <= rows; y++) {
+      ctx.beginPath();
+      ctx.moveTo(0, Math.round(y * cellH) + 0.5);
+      ctx.lineTo(canvas.width, Math.round(y * cellH) + 0.5);
+      ctx.stroke();
+    }
+
+    // Hover highlight
+    if (hoverCell) {
+      const { x, y } = hoverCell;
+      ctx.strokeStyle = "#3a3a3a";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(
+        x * cellW + 1,
+        y * cellH + 1,
+        cellW - 2,
+        cellH - 2
+      );
+    }
   }
 
-  for (let y = 0; y <= rows; y++) {
-    ctx.beginPath();
-    ctx.moveTo(0, Math.round(y * cellH) + 0.5);
-    ctx.lineTo(canvas.width, Math.round(y * cellH) + 0.5);
-    ctx.stroke();
-  }
-
-  // Hover highlight
-  if (hoverCell) {
-    const { x, y } = hoverCell;
-    ctx.strokeStyle = "#3a3a3a";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(
-      x * cellW + 1,
-      y * cellH + 1,
-      cellW - 2,
-      cellH - 2
-    );
-  }
-  // Draw generated structure
+  // Draw generated structure (ALWAYS draw this if it exists)
   ctx.strokeStyle = "#e5e7eb";
   ctx.lineWidth = 2;
 
   for (const [x1, y1, x2, y2] of generatedLines) {
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
   }
 }
+
 function renderLegend() {
   legendEl.innerHTML = "";
 
@@ -226,6 +239,122 @@ function generateStructure() {
   draw();
 }
 
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function dirFromRule(rule, prevDir) {
+  // Directions: 0=up,1=right,2=down,3=left
+  if (rule === 1) return 0;
+  if (rule === 2) return 1;
+  if (rule === 3) return 2;
+  if (rule === 4) return 3;
+  return prevDir; // rule 0 or others: keep direction
+}
+
+function stepFromDir(dir) {
+  if (dir === 0) return { dx: 0, dy: -1 };
+  if (dir === 1) return { dx: 1, dy: 0 };
+  if (dir === 2) return { dx: 0, dy: 1 };
+  return { dx: -1, dy: 0 };
+}
+
+function inBounds(x, y) {
+  return x >= 0 && x < cols && y >= 0 && y < rows;
+}
+
+function pickSeeds() {
+  const mode = seedModeEl.value;
+
+  if (mode === "center") {
+    return [{ x: Math.floor(cols / 2), y: Math.floor(rows / 2), dir: 1 }];
+  }
+
+  if (mode === "random") {
+    const count = clampInt(seedCountInput.value, 1, 200);
+    seedCountInput.value = count;
+
+    const seeds = [];
+    for (let i = 0; i < count; i++) {
+      seeds.push({ x: randInt(0, cols - 1), y: randInt(0, rows - 1), dir: randInt(0, 3) });
+    }
+    return seeds;
+  }
+
+  // default: all non-zero cells
+  const seeds = [];
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (grid[y][x] !== 0) seeds.push({ x, y, dir: 1 });
+    }
+  }
+  // if user hasn't painted anything, fallback to center
+  if (seeds.length === 0) return [{ x: Math.floor(cols / 2), y: Math.floor(rows / 2), dir: 1 }];
+  return seeds;
+}
+
+function generateStructure() {
+  generatedLines = [];
+
+  const steps = clampInt(stepsInput.value, 1, 64);
+  stepsInput.value = steps;
+
+  const cellW = canvas.width / cols;
+  const cellH = canvas.height / rows;
+
+  // Walkers live in grid space, but we draw in canvas space.
+  let walkers = pickSeeds().map(s => ({ ...s }));
+
+  // Limit explosion if user uses branch heavily
+  const MAX_WALKERS = 600;
+
+  for (let i = 0; i < steps; i++) {
+    if (walkers.length === 0) break;
+
+    const nextWalkers = [];
+
+    for (const w of walkers) {
+      if (!inBounds(w.x, w.y)) continue;
+
+      const rule = grid[w.y][w.x];
+
+      // Apply direction rule
+      w.dir = dirFromRule(rule, w.dir);
+
+      // Branch rule: split into two directions
+      if (rule === 5 && nextWalkers.length < MAX_WALKERS) {
+        const left = (w.dir + 3) % 4;
+        const right = (w.dir + 1) % 4;
+        nextWalkers.push({ x: w.x, y: w.y, dir: left });
+        nextWalkers.push({ x: w.x, y: w.y, dir: right });
+      }
+
+      const { dx, dy } = stepFromDir(w.dir);
+      const nx = w.x + dx;
+      const ny = w.y + dy;
+
+      if (!inBounds(nx, ny)) continue;
+
+      // Convert to canvas coords (cell centers)
+      const x1 = w.x * cellW + cellW / 2;
+      const y1 = w.y * cellH + cellH / 2;
+      const x2 = nx * cellW + cellW / 2;
+      const y2 = ny * cellH + cellH / 2;
+
+      generatedLines.push([x1, y1, x2, y2]);
+
+      // Move forward
+      nextWalkers.push({ x: nx, y: ny, dir: w.dir });
+
+      if (nextWalkers.length >= MAX_WALKERS) break;
+    }
+
+    walkers = nextWalkers;
+  }
+
+  draw();
+}
+
 // --- Events: hover / click / drag paint ---
 canvas.addEventListener("mousemove", (e) => {
   hoverCell = getCellFromEvent(e);
@@ -265,6 +394,7 @@ clearBtn.addEventListener("click", () => {
 colsInput.addEventListener("change", applySettings);
 rowsInput.addEventListener("change", applySettings);
 ruleMaxInput.addEventListener("change", applySettings);
+showGridEl.addEventListener("change", draw);
 
 // Init
 grid = createGrid(rows, cols);
