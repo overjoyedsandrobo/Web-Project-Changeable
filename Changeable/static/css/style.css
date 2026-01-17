@@ -6,8 +6,13 @@
     --muted: #9a9a9a;
 }
 
-body {
+html, body {
+    height: 100%;
     margin: 0;
+    overflow: hidden; /* ✅ prevents page scrolling */
+}
+
+body {
     font-family: system-ui, sans-serif;
     background: var(--bg);
     color: var(--text);
@@ -35,6 +40,7 @@ header p {
 
 main {
     flex: 1;
+    min-height: 0;
     display: grid;
     grid-template-columns: 1fr 320px;
 }
@@ -52,6 +58,17 @@ select {
 select:focus {
   border-color: #3a3a3a;
 }
+
+details summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+details summary::-webkit-details-marker {
+  display: none;
+}
+
 
 
 #canvas-container {
@@ -75,7 +92,12 @@ select:focus {
     background: var(--panel);
     border-left: 1px solid var(--border);
     padding: 1.2rem;
+
+    height: 100%;
+    overflow-y: auto;   
+    min-height: 0;     
 }
+
 
 #controls h2 {
     margin-top: 0;
@@ -100,12 +122,16 @@ select:focus {
 }
 
 .control-group {
-  margin-top: 1.2rem;
+  margin-top: 0.9rem;
 }
+.controls-bottom-spacer {
+  height: 24px;
+}
+
 
 input[type="number"] {
   width: 100%;
-  padding: 0.6rem 0.7rem;
+  padding: 0.5rem 0.6rem;
   background: #101010;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -119,7 +145,7 @@ input[type="number"]:focus {
 
 .btn {
   width: 100%;
-  padding: 0.65rem 0.8rem;
+  padding: 0.55rem 0.7rem;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: #101010;
@@ -153,3 +179,54 @@ input[type="number"]:focus {
   margin-right: 0.5rem;
   border: 1px solid var(--border);
 }
+/* Collapsible Save/Load */
+.collapsible summary {
+  list-style: none;
+}
+.collapsible summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #101010;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.collapse-btn::after {
+  content: "▾";
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+details[open] > .collapse-btn::after {
+  content: "▴";
+}
+
+.stack {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  background: #0f0f0f;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  resize: vertical;
+  min-height: 110px;
+}
+
+
