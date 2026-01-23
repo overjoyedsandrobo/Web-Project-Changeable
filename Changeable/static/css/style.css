@@ -359,4 +359,15 @@ details[open] > .collapse-btn::after {
 #regenerateBtn:hover {
   border-color: #6b7280;
 }
+.btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.btn.small {
+  padding: 0.5rem 0.55rem;
+  font-size: 0.9rem;
+}
 

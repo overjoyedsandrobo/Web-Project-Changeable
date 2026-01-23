@@ -23,6 +23,10 @@ const saveBtn = document.getElementById("saveBtn");
 const loadBtn = document.getElementById("loadBtn");
 const designData = document.getElementById("designData");
 const randomizeSeedEl = document.getElementById("randomizeSeed");
+const mirrorXBtn = document.getElementById("mirrorXBtn");
+const mirrorYBtn = document.getElementById("mirrorYBtn");
+const rotateBtn = document.getElementById("rotateBtn");
+
 
 let generatedLines = [];
 
@@ -421,6 +425,59 @@ function importDesign(text) {
   resizeCanvas();
   draw();
 }
+function mirrorX() {
+  const newGrid = cloneGrid(grid);
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      newGrid[y][cols - 1 - x] = grid[y][x];
+    }
+  }
+
+  grid = newGrid;
+  generatedLines = [];
+  draw();
+}
+function mirrorY() {
+  const newGrid = cloneGrid(grid);
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      newGrid[rows - 1 - y][x] = grid[y][x];
+    }
+  }
+
+  grid = newGrid;
+  generatedLines = [];
+  draw();
+}
+function rotate90() {
+  const newRows = cols;
+  const newCols = rows;
+
+  const newGrid = Array.from({ length: newRows }, () => Array(newCols).fill(0));
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      // (x, y) -> (y, newCols - 1 - x) for clockwise rotation
+      newGrid[x][newCols - 1 - y] = grid[y][x];
+    }
+  }
+
+  rows = newRows;
+  cols = newCols;
+
+  rowsInput.value = rows;
+  colsInput.value = cols;
+
+  grid = newGrid;
+  generatedLines = [];
+  hoverCell = null;
+
+  resizeCanvas();
+  draw();
+}
+
 function openHelp() {
   helpModal.classList.remove("hidden");
 }
@@ -428,6 +485,10 @@ function openHelp() {
 function closeHelp() {
   helpModal.classList.add("hidden");
 }
+function cloneGrid(g) {
+  return g.map(row => row.slice());
+}
+
 
 // --- Events: hover / click / drag paint ---
 canvas.addEventListener("mousemove", (e) => {
@@ -481,6 +542,11 @@ loadBtn.addEventListener("click", () => {
     alert("Invalid design data.");
   }
 });
+
+mirrorXBtn.addEventListener("click", mirrorX);
+mirrorYBtn.addEventListener("click", mirrorY);
+rotateBtn.addEventListener("click", rotate90);
+
 
 helpBtn.addEventListener("click", openHelp);
 helpClose.addEventListener("click", closeHelp);
