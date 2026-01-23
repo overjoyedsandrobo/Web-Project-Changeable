@@ -22,7 +22,7 @@ const seedInput = document.getElementById("seed");
 const saveBtn = document.getElementById("saveBtn");
 const loadBtn = document.getElementById("loadBtn");
 const designData = document.getElementById("designData");
-
+const randomizeSeedEl = document.getElementById("randomizeSeed");
 
 let generatedLines = [];
 
@@ -297,12 +297,21 @@ if (typeof rng !== "function") {
 
 function generateStructure() {
   generatedLines = [];
-
+  
   const steps = clampInt(stepsInput.value, 1, 1000);
   stepsInput.value = steps;
 
-  const seed = clampInt(seedInput.value, 0, 999999999);
-  seedInput.value = seed;
+  let seed;
+  
+  if (randomizeSeedEl && randomizeSeedEl.checked) {
+    // Variation mode: new seed every generate
+    seed = (Math.random() * 1e9) >>> 0;
+    seedInput.value = seed;
+  } else {
+    // Deterministic mode: use current seed
+    seed = clampInt(seedInput.value, 0, 999999999);
+    seedInput.value = seed;
+  }
 
   const rng = mulberry32(seed);
 
