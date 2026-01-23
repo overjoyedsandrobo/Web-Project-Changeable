@@ -6,6 +6,11 @@ const rowsInput = document.getElementById("rows");
 const ruleMaxInput = document.getElementById("ruleMax");
 const clearBtn = document.getElementById("clearBtn");
 
+const helpBtn = document.getElementById("helpBtn");
+const helpModal = document.getElementById("helpModal");
+const helpClose = document.getElementById("helpClose");
+const helpBackdrop = document.getElementById("helpBackdrop");
+
 const legendEl = document.getElementById("legend");
 
 const generateBtn = document.getElementById("generateBtn");
@@ -407,6 +412,13 @@ function importDesign(text) {
   resizeCanvas();
   draw();
 }
+function openHelp() {
+  helpModal.classList.remove("hidden");
+}
+
+function closeHelp() {
+  helpModal.classList.add("hidden");
+}
 
 // --- Events: hover / click / drag paint ---
 canvas.addEventListener("mousemove", (e) => {
@@ -458,6 +470,16 @@ loadBtn.addEventListener("click", () => {
     importDesign(designData.value);
   } catch (e) {
     alert("Invalid design data.");
+  }
+});
+
+helpBtn.addEventListener("click", openHelp);
+helpClose.addEventListener("click", closeHelp);
+helpBackdrop.addEventListener("click", closeHelp);
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !helpModal.classList.contains("hidden")) {
+    closeHelp();
   }
 });
 

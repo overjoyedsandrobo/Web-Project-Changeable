@@ -20,7 +20,11 @@
         </div>
 
         <div id="controls">
-            <h2>Controls</h2>
+            <div class="controls-top">
+                <h2>Controls</h2>
+                <button id="helpBtn" class="icon-btn" title="Help" aria-label="Help">?</button>
+            </div>
+
 
             <div class="control-group">
                 <label class="label" for="cols">Columns</label>
@@ -98,6 +102,44 @@
 
         </div>
     </main>
+    <div id="helpModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+        <div class="modal-backdrop" id="helpBackdrop"></div>
+
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="helpTitle">Help</h3>
+                <button id="helpClose" class="icon-btn" aria-label="Close">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="help-section">
+                    <h4>Editing</h4>
+                    <ul>
+                    <li><b>Click a rule</b> in the legend to select it.</li>
+                    <li><b>Left click / drag</b> paints the selected rule.</li>
+                    <li><b>Shift + click / drag</b> erases (sets cell to 0).</li>
+                    <li><b>Right click / drag</b> erases (sets cell to 0).</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h4>Generation</h4>
+                    <ul>
+                    <li><b>Generate</b> interprets the grid rules into a structure.</li>
+                    <li><b>Seed</b> makes results reproducible (same grid + same seed).</li>
+                    </ul>
+                </div>
+
+                <div class="help-section">
+                    <h4>Tips</h4>
+                    <ul>
+                    <li>Use symmetry-like patterns for “lamp” style structures.</li>
+                    <li>Start with a few rules, then refine locally.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
