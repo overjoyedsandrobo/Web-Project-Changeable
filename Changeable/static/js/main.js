@@ -29,6 +29,10 @@ let ruleMax = parseInt(ruleMaxInput.value, 10);
 let grid = [];
 let hoverCell = null;
 let isPainting = false;
+let activeRule = 1; // default paint rule
+let paintEraseMode = false;
+
+
 
 // --- Canvas sizing (rectangular-friendly) ---
 function resizeCanvas() {
@@ -171,19 +175,37 @@ function renderLegend() {
 
   for (let r = 0; r < ruleMax; r++) {
     const item = document.createElement("div");
+    item.className = "legend-item" + (r === activeRule ? " selected" : "");
+    item.dataset.rule = String(r);
 
     const swatch = document.createElement("span");
     swatch.className = "swatch";
     swatch.style.background = ruleToFill(r);
 
     const label = document.createElement("span");
-    label.textContent = r === 0 ? `${r} Empty` : `${r}`;
+    label.className = "legend-label";
+    label.textContent = r === 0 ? "0 Empty (erase)" : `${r}`;
 
     item.appendChild(swatch);
     item.appendChild(label);
+
+    item.addEventListener("click", () => {
+      activeRule = r;
+      renderLegend(); // refresh highlight
+    });
+
     legendEl.appendChild(item);
   }
 }
+
+function setCell(x, y, value) {
+  grid[y][x] = value;
+}
+
+function paintCell(x, y, erase) {
+  setCell(x, y, erase ? 0 : activeRule);
+}
+
 
 // --- Mouse to cell ---
 function getCellFromEvent(evt) {
@@ -391,7 +413,7 @@ canvas.addEventListener("mousemove", (e) => {
   hoverCell = getCellFromEvent(e);
 
   if (isPainting && hoverCell) {
-    cycleCell(hoverCell.x, hoverCell.y);
+    paintCell(hoverCell.x, hoverCell.y, paintEraseMode);
   }
 
   draw();
@@ -406,8 +428,14 @@ canvas.addEventListener("mouseleave", () => {
 canvas.addEventListener("mousedown", (e) => {
   const cell = getCellFromEvent(e);
   if (!cell) return;
+
+  // Left click = paint, Shift+Left = erase
+  // Right click = erase
+  const isRightClick = e.button === 2;
+  paintEraseMode = isRightClick || e.shiftKey;
+
   isPainting = true;
-  cycleCell(cell.x, cell.y);
+  paintCell(cell.x, cell.y, paintEraseMode);
   draw();
 });
 
@@ -432,6 +460,8 @@ loadBtn.addEventListener("click", () => {
     alert("Invalid design data.");
   }
 });
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 // Inputs
 colsInput.addEventListener("change", applySettings);
