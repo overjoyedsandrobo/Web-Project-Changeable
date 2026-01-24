@@ -26,6 +26,9 @@ const randomizeSeedEl = document.getElementById("randomizeSeed");
 const mirrorXBtn = document.getElementById("mirrorXBtn");
 const mirrorYBtn = document.getElementById("mirrorYBtn");
 const rotateBtn = document.getElementById("rotateBtn");
+const exportSvgBtn = document.getElementById("exportSvgBtn");
+const exportPngBtn = document.getElementById("exportPngBtn");
+
 
 
 let generatedLines = [];
@@ -477,6 +480,73 @@ function rotate90() {
   resizeCanvas();
   draw();
 }
+function exportSVG() {
+  if (!generatedLines || generatedLines.length === 0) {
+    alert("Nothing to export. Click Generate first.");
+    return;
+  }
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Metadata comment (nice for reproducibility)
+  const meta = {
+    cols,
+    rows,
+    ruleMax,
+    seed: Number(seedInput.value),
+    steps: Number(stepsInput.value),
+    randomizeSeed: !!(randomizeSeedEl && randomizeSeedEl.checked),
+    seedMode: seedModeEl?.value,
+    seedCount: seedCountInput ? Number(seedCountInput.value) : undefined,
+  };
+
+  const stroke = "#e5e7eb";
+  const strokeWidth = 2;
+
+  let paths = "";
+  for (const [x1, y1, x2, y2] of generatedLines) {
+    paths += `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />\n`;
+  }
+
+  const svg =
+`<?xml version="1.0" encoding="UTF-8"?>
+<!-- Changeable export: ${JSON.stringify(meta)} -->
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <rect width="100%" height="100%" fill="black" />
+  <g fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round">
+${paths.trimEnd()}
+  </g>
+</svg>`;
+
+  const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `changeable_${Date.now()}.svg`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+function exportPNG() {
+  if (!generatedLines || generatedLines.length === 0) {
+    alert("Nothing to export. Click Generate first.");
+    return;
+  }
+
+  // Export the current canvas as-is
+  const url = canvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `changeable_${Date.now()}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 
 function openHelp() {
   helpModal.classList.remove("hidden");
@@ -546,6 +616,10 @@ loadBtn.addEventListener("click", () => {
 mirrorXBtn.addEventListener("click", mirrorX);
 mirrorYBtn.addEventListener("click", mirrorY);
 rotateBtn.addEventListener("click", rotate90);
+
+exportSvgBtn.addEventListener("click", exportSVG);
+exportPngBtn.addEventListener("click", exportPNG);
+
 
 
 helpBtn.addEventListener("click", openHelp);
