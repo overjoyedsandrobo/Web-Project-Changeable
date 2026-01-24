@@ -56,6 +56,23 @@
                 <div class="hint">Higher = fewer holes, thicker structure.</div>
             </div>
 
+            <div class="control-group">
+                <label class="label" for="baseShape">Base shape</label>
+                <select id="baseShape">
+                    <option value="none">None (full canvas)</option>
+                    <option value="vase" selected>Vase</option>
+                    <option value="pill">Pill</option>
+                </select>
+                <div class="hint">Cutouts are generated inside this silhouette.</div>
+            </div>
+
+            <div class="control-group">
+                <label class="label" for="rim">Rim thickness</label>
+                <input id="rim" type="number" min="0" max="6" value="1" />
+                <div class="hint">Keeps the border solid for strength.</div>
+            </div>
+
+
 
             <div class="control-group">
                 <button id="generateBtn" class="btn">Generate</button>

@@ -39,6 +39,12 @@ const branchInput = document.getElementById("branch");
 const driftInput = document.getElementById("drift");
 const viewModeEl = document.getElementById("viewMode");
 const thresholdInput = document.getElementById("threshold");
+const baseShapeEl = document.getElementById("baseShape");
+const rimInput = document.getElementById("rim");
+
+let baseMask = [];     // where material exists
+let holeMask = [];     // where holes are
+
 
 let density = [];   // rows x cols counts
 let mask = [];      // rows x cols boolean (true = hole)
@@ -152,21 +158,32 @@ function draw() {
       }
     }
   }
-  if ((viewMode === "mask" || viewMode === "both") && mask && mask.length) {
-    // material base
-    ctx.fillStyle = "#0a0a0a";
+  if ((viewMode === "mask" || viewMode === "both") && baseMask && baseMask.length) {
+    // Background (outside panel)
+    ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // holes
+    // Panel material cells
+    ctx.fillStyle = "#0a0a0a";
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (baseMask[y][x]) {
+          ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+        }
+      }
+    }
+
+    // Holes (cutouts)
     ctx.fillStyle = "#e5e7eb";
     for (let y = 0; y < rows; y++) {
       for (let x = 0; x < cols; x++) {
-        if (mask[y][x]) {
+        if (holeMask && holeMask[y][x]) {
           ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
         }
       }
     }
   }
+
 
   // Grid lines + hover highlight ONLY if showGrid is enabled
   if (showGrid) {
@@ -358,6 +375,10 @@ function generateStructure() {
   density = create2D(rows, cols, 0);
   mask = create2D(rows, cols, false);
 
+  baseMask = buildBaseMask();
+  holeMask = create2D(rows, cols, false);
+
+
   const mode = modeEl ? modeEl.value : "paths";
 
   if (mode === "circuit") {
@@ -374,7 +395,23 @@ function generateStructure() {
 
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      mask[y][x] = density[y][x] >= t; // true = hole
+      const t = clampInt(thresholdInput.value, 1, 50);
+      thresholdInput.value = t;
+
+      const rim = clampInt(rimInput.value, 0, 6);
+      rimInput.value = rim;
+
+      const rimMask = applyRim(baseMask, rim);
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          // Only allow holes inside the base shape and NOT on the rim
+          const inside = baseMask[y][x];
+          const isRim = rimMask[y][x];
+
+          holeMask[y][x] = inside && !isRim && (density[y][x] >= t);
+        }
+      }
     }
   }
 
@@ -750,6 +787,79 @@ function applyState(state) {
   resizeCanvas();
   draw();
 }
+function buildBaseMask() {
+  const shape = baseShapeEl ? baseShapeEl.value : "none";
+  const bm = create2D(rows, cols, true);
+
+  if (shape === "none") return bm;
+
+  if (shape === "pill") {
+    // Rounded rectangle / pill silhouette
+    const cx = (cols - 1) / 2;
+    const cy = (rows - 1) / 2;
+    const rx = cols * 0.32;
+    const ry = rows * 0.38;
+
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const dx = (x - cx) / rx;
+        const dy = (y - cy) / ry;
+        bm[y][x] = (dx * dx + dy * dy) <= 1.0;
+      }
+    }
+    return bm;
+  }
+
+  // Default: vase (lamp-like)
+  if (shape === "vase") {
+    const cx = (cols - 1) / 2;
+
+    for (let y = 0; y < rows; y++) {
+      const t = y / (rows - 1); // 0 top -> 1 bottom
+
+      // Vase profile: narrow neck, wide belly, then base flare
+      const neck = 0.10;                 // narrow near top
+      const belly = 0.34 * Math.sin(Math.PI * t); // widest mid
+      const base = 0.18 * (t * t);       // flare near bottom
+
+      const halfWidth = (cols * (neck + belly + base)) + 1.0; // in cells
+
+      for (let x = 0; x < cols; x++) {
+        bm[y][x] = Math.abs(x - cx) <= halfWidth;
+      }
+    }
+    return bm;
+  }
+
+  return bm;
+}
+
+function applyRim(mask, rim) {
+  if (rim <= 0) return mask;
+  const out = create2D(rows, cols, false);
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!mask[y][x]) continue;
+
+      // if near edge of base mask, keep solid (rim)
+      let nearEdge = false;
+      for (let dy = -rim; dy <= rim && !nearEdge; dy++) {
+        for (let dx = -rim; dx <= rim; dx++) {
+          const ny = y + dy;
+          const nx = x + dx;
+          if (ny < 0 || ny >= rows || nx < 0 || nx >= cols || !mask[ny][nx]) {
+            nearEdge = true;
+            break;
+          }
+        }
+      }
+      out[y][x] = nearEdge;
+    }
+  }
+  return out; // true means "rim cell"
+}
+
 
 function pushHistory() {
   undoStack.push(snapshotState());
