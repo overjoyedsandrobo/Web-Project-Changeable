@@ -41,6 +41,21 @@
                 <input id="ruleMax" type="number" min="2" max="12" value="6" />
                 <div class="hint">Click cells to cycle rules: 0 → 1 → ...</div>
             </div>
+            <div class="control-group">
+                <label class="label" for="viewMode">View</label>
+                <select id="viewMode">
+                    <option value="both" selected>Both</option>
+                    <option value="mask">Mask only</option>
+                    <option value="lines">Lines only</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label class="label" for="threshold">Cutout threshold</label>
+                <input id="threshold" type="number" min="1" max="50" value="6" />
+                <div class="hint">Higher = fewer holes, thicker structure.</div>
+            </div>
+
 
             <div class="control-group">
                 <button id="generateBtn" class="btn">Generate</button>
@@ -52,7 +67,7 @@
                     Randomize seed
                 </label>
             </div>
-            
+
             <div class="control-group">
                 <label class="label" for="mode">Interpreter</label>
                 <select id="mode">

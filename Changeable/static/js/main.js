@@ -37,8 +37,11 @@ const HISTORY_LIMIT = 100;
 const modeEl = document.getElementById("mode");
 const branchInput = document.getElementById("branch");
 const driftInput = document.getElementById("drift");
+const viewModeEl = document.getElementById("viewMode");
+const thresholdInput = document.getElementById("threshold");
 
-
+let density = [];   // rows x cols counts
+let mask = [];      // rows x cols boolean (true = hole)
 
 let generatedLines = [];
 
@@ -123,6 +126,7 @@ function ruleToFill(rule) {
 }
 
 function draw() {
+  
   // Background
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#000";
@@ -131,16 +135,35 @@ function draw() {
   const cellW = canvas.width / cols;
   const cellH = canvas.height / rows;
 
+  const viewMode = viewModeEl ? viewModeEl.value : "both";
+
   // Read toggle (default to true if checkbox doesn't exist yet)
   const showGrid = showGridEl ? showGridEl.checked : true;
 
   // Fill cells based on rule value (keep this ALWAYS so you can see rules)
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const rule = grid[y][x];
-      if (rule !== 0) {
-        ctx.fillStyle = ruleToFill(rule);
-        ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+  if (viewMode !== "mask") {
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const rule = grid[y][x];
+        if (rule !== 0) {
+          ctx.fillStyle = ruleToFill(rule);
+          ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+        }
+      }
+    }
+  }
+  if ((viewMode === "mask" || viewMode === "both") && mask && mask.length) {
+    // material base
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // holes
+    ctx.fillStyle = "#e5e7eb";
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (mask[y][x]) {
+          ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
+        }
       }
     }
   }
@@ -183,11 +206,13 @@ function draw() {
   ctx.strokeStyle = "#e5e7eb";
   ctx.lineWidth = 2;
 
-  for (const [x1, y1, x2, y2] of generatedLines) {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
+  if (viewMode === "lines" || viewMode === "both") {
+    for (const [x1, y1, x2, y2] of generatedLines) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
   }
 }
 
@@ -317,7 +342,7 @@ function generateStructure() {
   const steps = clampInt(stepsInput.value, 1, 64);
   stepsInput.value = steps;
 
-  // Randomize seed toggle behavior (your current setup)
+  // Randomize seed toggle behavior
   let seed;
   if (randomizeSeedEl && randomizeSeedEl.checked) {
     seed = (Math.random() * 1e9) >>> 0;
@@ -329,6 +354,10 @@ function generateStructure() {
 
   const rng = mulberry32(seed);
 
+  // ✅ Reset density + mask every generate
+  density = create2D(rows, cols, 0);
+  mask = create2D(rows, cols, false);
+
   const mode = modeEl ? modeEl.value : "paths";
 
   if (mode === "circuit") {
@@ -336,11 +365,22 @@ function generateStructure() {
   } else if (mode === "organic") {
     generateOrganic(rng, steps);
   } else {
-    generatePaths(rng, steps); // current behavior
+    generatePaths(rng, steps);
+  }
+
+  // ✅ Build mask from density using threshold
+  const t = clampInt(thresholdInput.value, 1, 50);
+  thresholdInput.value = t;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      mask[y][x] = density[y][x] >= t; // true = hole
+    }
   }
 
   draw();
 }
+
 function generatePaths(rng, steps) {
   const cellW = canvas.width / cols;
   const cellH = canvas.height / rows;
@@ -379,6 +419,9 @@ function generatePaths(rng, steps) {
       const y2 = ny * cellH + cellH / 2;
 
       generatedLines.push([x1, y1, x2, y2]);
+      density[w.y][w.x] += 1;
+      density[ny][nx] += 1;
+
       nextWalkers.push({ x: nx, y: ny, dir: w.dir });
 
       if (nextWalkers.length >= MAX_WALKERS) break;
@@ -426,6 +469,9 @@ function generateCircuit(rng, steps) {
       const y2 = ny * cellH + cellH / 2;
 
       generatedLines.push([x1, y1, x2, y2]);
+      density[w.y][w.x] += 1;
+      density[ny][nx] += 1;
+
       nextWalkers.push({ x: nx, y: ny, dir: w.dir });
 
       if (nextWalkers.length >= MAX_WALKERS) break;
@@ -490,6 +536,9 @@ function generateOrganic(rng, steps) {
       const y2 = ny * cellH + cellH / 2;
 
       generatedLines.push([x1, y1, x2, y2]);
+      density[w.y][w.x] += 1;
+      density[ny][nx] += 1;
+
       nextWalkers.push({ x: nx, y: ny, dir: w.dir });
 
       if (nextWalkers.length >= MAX_WALKERS) break;
@@ -763,7 +812,27 @@ function closeHelp() {
 function cloneGrid(g) {
   return g.map(row => row.slice());
 }
+function create2D(r, c, fill) {
+  return Array.from({ length: r }, () => Array(c).fill(fill));
+}
 
+
+viewModeEl.addEventListener("change", draw);
+
+thresholdInput.addEventListener("change", () => {
+  // recompute mask from density without regenerating
+  const t = clampInt(thresholdInput.value, 1, 50);
+  thresholdInput.value = t;
+
+  if (!density || density.length === 0) return;
+
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      mask[y][x] = density[y][x] >= t;
+    }
+  }
+  draw();
+});
 
 // --- Events: hover / click / drag paint ---
 canvas.addEventListener("mousemove", (e) => {
