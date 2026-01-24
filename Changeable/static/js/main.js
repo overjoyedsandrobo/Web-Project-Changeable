@@ -28,6 +28,12 @@ const mirrorYBtn = document.getElementById("mirrorYBtn");
 const rotateBtn = document.getElementById("rotateBtn");
 const exportSvgBtn = document.getElementById("exportSvgBtn");
 const exportPngBtn = document.getElementById("exportPngBtn");
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
+
+const undoStack = [];
+const redoStack = [];
+const HISTORY_LIMIT = 100;
 
 
 
@@ -429,6 +435,7 @@ function importDesign(text) {
   draw();
 }
 function mirrorX() {
+  pushHistory();
   const newGrid = cloneGrid(grid);
 
   for (let y = 0; y < rows; y++) {
@@ -442,6 +449,7 @@ function mirrorX() {
   draw();
 }
 function mirrorY() {
+  pushHistory();
   const newGrid = cloneGrid(grid);
 
   for (let y = 0; y < rows; y++) {
@@ -455,6 +463,7 @@ function mirrorY() {
   draw();
 }
 function rotate90() {
+  pushHistory();
   const newRows = cols;
   const newCols = rows;
 
@@ -546,6 +555,86 @@ function exportPNG() {
   a.click();
   a.remove();
 }
+function cloneGrid(g) {
+  return g.map(row => row.slice());
+}
+
+function snapshotState() {
+  return {
+    rows,
+    cols,
+    ruleMax,
+    grid: cloneGrid(grid),
+  };
+}
+
+function applyState(state) {
+  rows = state.rows;
+  cols = state.cols;
+  ruleMax = state.ruleMax;
+  grid = cloneGrid(state.grid);
+
+  rowsInput.value = rows;
+  colsInput.value = cols;
+  ruleMaxInput.value = ruleMax;
+
+  generatedLines = [];
+  hoverCell = null;
+
+  renderLegend();
+  resizeCanvas();
+  draw();
+}
+
+function pushHistory() {
+  undoStack.push(snapshotState());
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack.length = 0; // clear redo on new action
+  updateHistoryButtons();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  redoStack.push(snapshotState());
+  const prev = undoStack.pop();
+  applyState(prev);
+  updateHistoryButtons();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  undoStack.push(snapshotState());
+  const next = redoStack.pop();
+  applyState(next);
+  updateHistoryButtons();
+}
+
+function updateHistoryButtons() {
+  if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+  if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+}
+undoBtn.addEventListener("click", undo);
+redoBtn.addEventListener("click", redo);
+
+window.addEventListener("keydown", (e) => {
+  const isMac = navigator.platform.toUpperCase().includes("MAC");
+  const mod = isMac ? e.metaKey : e.ctrlKey;
+
+  if (!mod) return;
+
+  // Ctrl/Cmd+Z = undo
+  if (e.key.toLowerCase() === "z" && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+  }
+
+  // Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z = redo
+  if (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey)) {
+    e.preventDefault();
+    redo();
+  }
+});
+
 
 
 function openHelp() {
@@ -580,6 +669,7 @@ canvas.addEventListener("mouseleave", () => {
 canvas.addEventListener("mousedown", (e) => {
   const cell = getCellFromEvent(e);
   if (!cell) return;
+  pushHistory();
 
   // Left click = paint, Shift+Left = erase
   // Right click = erase
@@ -596,10 +686,12 @@ window.addEventListener("mouseup", () => {
 });
 
 clearBtn.addEventListener("click", () => {
+  pushHistory();
   grid = createGrid(rows, cols);
   generatedLines = [];
   draw();
 });
+
 
 saveBtn.addEventListener("click", () => {
   designData.value = exportDesign();
@@ -645,3 +737,5 @@ grid = createGrid(rows, cols);
 renderLegend();
 resizeCanvas();
 generateBtn.addEventListener("click", generateStructure);
+updateHistoryButtons();
+
