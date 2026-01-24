@@ -52,6 +52,28 @@
                     Randomize seed
                 </label>
             </div>
+            
+            <div class="control-group">
+                <label class="label" for="mode">Interpreter</label>
+                <select id="mode">
+                    <option value="paths" selected>Paths</option>
+                    <option value="circuit">Circuit</option>
+                    <option value="organic">Organic</option>
+                </select>
+                <div class="hint">Different generation styles from the same grid.</div>
+            </div>
+
+            <div class="control-group">
+                <label class="label" for="branch">Branching</label>
+                <input id="branch" type="number" min="0" max="100" value="30" />
+                <div class="hint">Used mostly by Organic mode (% chance).</div>
+            </div>
+
+            <div class="control-group">
+                <label class="label" for="drift">Drift</label>
+                <input id="drift" type="number" min="0" max="100" value="20" />
+                <div class="hint">Used mostly by Organic mode (% chance to turn).</div>
+            </div>
 
             <div class="control-group">
                 <label class="label" for="seed">Seed</label>

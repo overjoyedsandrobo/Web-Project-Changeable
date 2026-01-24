@@ -34,6 +34,9 @@ const redoBtn = document.getElementById("redoBtn");
 const undoStack = [];
 const redoStack = [];
 const HISTORY_LIMIT = 100;
+const modeEl = document.getElementById("mode");
+const branchInput = document.getElementById("branch");
+const driftInput = document.getElementById("drift");
 
 
 
@@ -310,31 +313,39 @@ if (typeof rng !== "function") {
 
 function generateStructure() {
   generatedLines = [];
-  
-  const steps = clampInt(stepsInput.value, 1, 1000);
+
+  const steps = clampInt(stepsInput.value, 1, 64);
   stepsInput.value = steps;
 
+  // Randomize seed toggle behavior (your current setup)
   let seed;
-  
   if (randomizeSeedEl && randomizeSeedEl.checked) {
-    // Variation mode: new seed every generate
     seed = (Math.random() * 1e9) >>> 0;
     seedInput.value = seed;
   } else {
-    // Deterministic mode: use current seed
     seed = clampInt(seedInput.value, 0, 999999999);
     seedInput.value = seed;
   }
 
   const rng = mulberry32(seed);
 
+  const mode = modeEl ? modeEl.value : "paths";
+
+  if (mode === "circuit") {
+    generateCircuit(rng, steps);
+  } else if (mode === "organic") {
+    generateOrganic(rng, steps);
+  } else {
+    generatePaths(rng, steps); // current behavior
+  }
+
+  draw();
+}
+function generatePaths(rng, steps) {
   const cellW = canvas.width / cols;
   const cellH = canvas.height / rows;
 
-  // Walkers live in grid space, but we draw in canvas space.
   let walkers = pickSeeds(rng).map(s => ({ ...s }));
-
-  // Limit explosion if user uses branch heavily
   const MAX_WALKERS = 600;
 
   for (let i = 0; i < steps; i++) {
@@ -347,10 +358,8 @@ function generateStructure() {
 
       const rule = grid[w.y][w.x];
 
-      // Apply direction rule
       w.dir = dirFromRule(rule, w.dir);
 
-      // Branch rule: split into two directions
       if (rule === 5 && nextWalkers.length < MAX_WALKERS) {
         const left = (w.dir + 3) % 4;
         const right = (w.dir + 1) % 4;
@@ -364,15 +373,12 @@ function generateStructure() {
 
       if (!inBounds(nx, ny)) continue;
 
-      // Convert to canvas coords (cell centers)
       const x1 = w.x * cellW + cellW / 2;
       const y1 = w.y * cellH + cellH / 2;
       const x2 = nx * cellW + cellW / 2;
       const y2 = ny * cellH + cellH / 2;
 
       generatedLines.push([x1, y1, x2, y2]);
-
-      // Move forward
       nextWalkers.push({ x: nx, y: ny, dir: w.dir });
 
       if (nextWalkers.length >= MAX_WALKERS) break;
@@ -380,9 +386,119 @@ function generateStructure() {
 
     walkers = nextWalkers;
   }
-
-  draw();
 }
+
+function generateCircuit(rng, steps) {
+  const cellW = canvas.width / cols;
+  const cellH = canvas.height / rows;
+
+  let walkers = pickSeeds(rng).map(s => ({ ...s }));
+  const MAX_WALKERS = 400;
+
+  for (let i = 0; i < steps; i++) {
+    if (walkers.length === 0) break;
+
+    const nextWalkers = [];
+
+    for (const w of walkers) {
+      if (!inBounds(w.x, w.y)) continue;
+
+      const rule = grid[w.y][w.x];
+
+      // Force direction if rule 1..4
+      w.dir = dirFromRule(rule, w.dir);
+
+      // Rule 5 = "turn" (not branch). Choose left or right by rng.
+      if (rule === 5) {
+        const turnRight = rng() < 0.5;
+        w.dir = turnRight ? (w.dir + 1) % 4 : (w.dir + 3) % 4;
+      }
+
+      const { dx, dy } = stepFromDir(w.dir);
+      const nx = w.x + dx;
+      const ny = w.y + dy;
+
+      if (!inBounds(nx, ny)) continue;
+
+      const x1 = w.x * cellW + cellW / 2;
+      const y1 = w.y * cellH + cellH / 2;
+      const x2 = nx * cellW + cellW / 2;
+      const y2 = ny * cellH + cellH / 2;
+
+      generatedLines.push([x1, y1, x2, y2]);
+      nextWalkers.push({ x: nx, y: ny, dir: w.dir });
+
+      if (nextWalkers.length >= MAX_WALKERS) break;
+    }
+
+    walkers = nextWalkers;
+  }
+}
+
+function generateOrganic(rng, steps) {
+  const cellW = canvas.width / cols;
+  const cellH = canvas.height / rows;
+
+  const branchPct = clampInt(branchInput.value, 0, 100);
+  branchInput.value = branchPct;
+
+  const driftPct = clampInt(driftInput.value, 0, 100);
+  driftInput.value = driftPct;
+
+  let walkers = pickSeeds(rng).map(s => ({ ...s }));
+  const MAX_WALKERS = 700;
+
+  for (let i = 0; i < steps; i++) {
+    if (walkers.length === 0) break;
+
+    const nextWalkers = [];
+
+    for (const w of walkers) {
+      if (!inBounds(w.x, w.y)) continue;
+
+      const rule = grid[w.y][w.x];
+
+      // Rule-directed steering when non-zero
+      if (rule !== 0) w.dir = dirFromRule(rule, w.dir);
+
+      // Drift: random small turn sometimes
+      if (rng() * 100 < driftPct) {
+        w.dir = (rng() < 0.5) ? (w.dir + 1) % 4 : (w.dir + 3) % 4;
+      }
+
+      // Branching: strongest when rule is 5, but can also branch a bit on any non-zero
+      const shouldBranch =
+        (rule === 5 && rng() * 100 < branchPct) ||
+        (rule !== 0 && rule !== 5 && rng() * 100 < (branchPct * 0.25));
+
+      if (shouldBranch && nextWalkers.length < MAX_WALKERS) {
+        const left = (w.dir + 3) % 4;
+        const right = (w.dir + 1) % 4;
+        nextWalkers.push({ x: w.x, y: w.y, dir: left });
+        nextWalkers.push({ x: w.x, y: w.y, dir: right });
+      }
+
+      const { dx, dy } = stepFromDir(w.dir);
+      const nx = w.x + dx;
+      const ny = w.y + dy;
+
+      if (!inBounds(nx, ny)) continue;
+
+      const x1 = w.x * cellW + cellW / 2;
+      const y1 = w.y * cellH + cellH / 2;
+      const x2 = nx * cellW + cellW / 2;
+      const y2 = ny * cellH + cellH / 2;
+
+      generatedLines.push([x1, y1, x2, y2]);
+      nextWalkers.push({ x: nx, y: ny, dir: w.dir });
+
+      if (nextWalkers.length >= MAX_WALKERS) break;
+    }
+
+    walkers = nextWalkers;
+  }
+}
+
 function mulberry32(seed) {
   let t = seed >>> 0;
   return function () {
