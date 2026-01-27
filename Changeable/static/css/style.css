@@ -351,14 +351,6 @@ details[open] > .collapse-btn::after {
 .help-section li {
   margin: 0.35rem 0;
 }
-#regenerateBtn {
-  background: #0f0f0f;
-  border-color: #2f2f2f;
-}
-
-#regenerateBtn:hover {
-  border-color: #6b7280;
-}
 .btn-row {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;

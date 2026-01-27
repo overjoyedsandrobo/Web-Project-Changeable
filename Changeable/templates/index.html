@@ -39,40 +39,8 @@
             <div class="control-group">
                 <label class="label" for="ruleMax">Rule count</label>
                 <input id="ruleMax" type="number" min="2" max="12" value="6" />
-                <div class="hint">Click cells to cycle rules: 0 → 1 → ...</div>
+                <div class="hint">Select a rule in the legend, then paint on the grid</div>
             </div>
-            <div class="control-group">
-                <label class="label" for="viewMode">View</label>
-                <select id="viewMode">
-                    <option value="both" selected>Both</option>
-                    <option value="mask">Mask only</option>
-                    <option value="lines">Lines only</option>
-                </select>
-            </div>
-
-            <div class="control-group">
-                <label class="label" for="threshold">Cutout threshold</label>
-                <input id="threshold" type="number" min="1" max="50" value="6" />
-                <div class="hint">Higher = fewer holes, thicker structure.</div>
-            </div>
-
-            <div class="control-group">
-                <label class="label" for="baseShape">Base shape</label>
-                <select id="baseShape">
-                    <option value="none">None (full canvas)</option>
-                    <option value="vase" selected>Vase</option>
-                    <option value="pill">Pill</option>
-                </select>
-                <div class="hint">Cutouts are generated inside this silhouette.</div>
-            </div>
-
-            <div class="control-group">
-                <label class="label" for="rim">Rim thickness</label>
-                <input id="rim" type="number" min="0" max="6" value="1" />
-                <div class="hint">Keeps the border solid for strength.</div>
-            </div>
-
-
 
             <div class="control-group">
                 <button id="generateBtn" class="btn">Generate</button>
@@ -85,27 +53,6 @@
                 </label>
             </div>
 
-            <div class="control-group">
-                <label class="label" for="mode">Interpreter</label>
-                <select id="mode">
-                    <option value="paths" selected>Paths</option>
-                    <option value="circuit">Circuit</option>
-                    <option value="organic">Organic</option>
-                </select>
-                <div class="hint">Different generation styles from the same grid.</div>
-            </div>
-
-            <div class="control-group">
-                <label class="label" for="branch">Branching</label>
-                <input id="branch" type="number" min="0" max="100" value="30" />
-                <div class="hint">Used mostly by Organic mode (% chance).</div>
-            </div>
-
-            <div class="control-group">
-                <label class="label" for="drift">Drift</label>
-                <input id="drift" type="number" min="0" max="100" value="20" />
-                <div class="hint">Used mostly by Organic mode (% chance to turn).</div>
-            </div>
 
             <div class="control-group">
                 <label class="label" for="seed">Seed</label>
@@ -143,34 +90,6 @@
                 </div>
             </details>
 
-            <div class="control-group">
-                <label class="label" for="steps">Steps</label>
-                <input id="steps" type="number" min="1" max="1000" value="16" />
-                <div class="hint">How long the structure grows.</div>
-            </div>
-
-            <div class="control-group">
-                <label class="label" for="seedMode">Seeds</label>
-                <select id="seedMode">
-                    <option value="nonzero" selected>All non-zero cells</option>
-                    <option value="center">Center cell only</option>
-                    <option value="random">Random cells</option>
-                </select>
-            </div>
-
-            <div class="control-group">
-                <label class="label" for="seedCount">Random seed count</label>
-                <input id="seedCount" type="number" min="1" max="200" value="25" />
-            </div>
-
-            <div class="control-group">
-                <label class="label">Export</label>
-                <div class="btn-row">
-                    <button id="exportSvgBtn" class="btn small">Export SVG</button>
-                    <button id="exportPngBtn" class="btn small">Export PNG</button>
-                </div>
-                <div class="hint">Exports the generated structure.</div>
-            </div>
 
             <div class="control-group">
                 <label class="label">
@@ -210,13 +129,14 @@
             </div>
 
             <div class="help-section">
-                <h4>Generation</h4>
+                <h4>Preview</h4>
                 <ul>
-                <li><b>Generate</b> interprets the grid into a structure.</li>
-                <li>The grid acts as a <b>program</b>, not a drawing.</li>
-                <li>Rules steer growth direction and branching.</li>
+                    <li><b>Generate</b> creates an abstract preview based on your rule grid and seed.</li>
+                    <li>The grid is a <b>control field</b>, not the final image.</li>
+                    <li>Try small edits and generate again to explore variations.</li>
                 </ul>
             </div>
+
 
             <div class="help-section">
                 <h4>Seed & Variations</h4>
@@ -234,15 +154,6 @@
                 <li><b>Mirror Y</b>: flips the grid top ↔ bottom.</li>
                 <li><b>Rotate 90°</b>: rotates the grid clockwise (rows/columns swap).</li>
                 <li>These tools transform the <b>rule grid</b>, so generation changes automatically.</li>
-                </ul>
-            </div>
-
-            <div class="help-section">
-                <h4>Tips</h4>
-                <ul>
-                <li>Start simple, then refine small areas.</li>
-                <li>Use branching rules to create organic structures.</li>
-                <li>Symmetry and repetition often produce “lamp-like” forms.</li>
                 </ul>
             </div>
 
