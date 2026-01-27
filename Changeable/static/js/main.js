@@ -29,6 +29,17 @@ const exportPngBtn = document.getElementById("exportPngBtn");
 const undoBtn = document.getElementById("undoBtn");
 const redoBtn = document.getElementById("redoBtn");
 
+const previewModal = document.getElementById("previewModal");
+const previewBackdrop = document.getElementById("previewBackdrop");
+const previewClose = document.getElementById("previewClose");
+const previewCanvas = document.getElementById("previewCanvas");
+const previewRegenerateBtn = document.getElementById("previewRegenerateBtn");
+const previewExportPngBtn = document.getElementById("previewExportPngBtn");
+const previewMeta = document.getElementById("previewMeta");
+
+const pctx = previewCanvas.getContext("2d");
+
+
 const undoStack = [];
 const redoStack = [];
 const HISTORY_LIMIT = 100;
@@ -230,8 +241,6 @@ function exportDesign() {
     rows,
     ruleMax,
     seed: clampInt(seedInput.value, 0, 999999999),
-    steps: clampInt(stepsInput.value, 1, 64),
-    seedMode: seedModeEl.value,
     grid,
   });
 }
@@ -248,8 +257,6 @@ function importDesign(text) {
   ruleMaxInput.value = ruleMax;
 
   seedInput.value = clampInt(obj.seed ?? 0, 0, 999999999);
-  stepsInput.value = clampInt(obj.steps ?? 16, 1, 64);
-  seedModeEl.value = obj.seedMode ?? "nonzero";
 
   grid = obj.grid;
   hoverCell = null;
@@ -378,6 +385,266 @@ function updateHistoryButtons() {
   if (undoBtn) undoBtn.disabled = undoStack.length === 0;
   if (redoBtn) redoBtn.disabled = redoStack.length === 0;
 }
+
+let lastPreviewSeed = 0;
+
+function openPreview() {
+  previewModal.classList.remove("hidden");
+}
+
+function closePreview() {
+  previewModal.classList.add("hidden");
+}
+
+function getSeedForPreview() {
+  let seed;
+  if (randomizeSeedEl && randomizeSeedEl.checked) {
+    seed = (Math.random() * 1e9) >>> 0;
+    seedInput.value = seed;
+  } else {
+    seed = clampInt(seedInput.value, 0, 999999999);
+    seedInput.value = seed;
+  }
+  return seed >>> 0;
+}
+
+function resizePreviewCanvas() {
+  const c = previewCanvas; // <canvas id="previewCanvas">
+  const rect = c.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  c.width = Math.floor(rect.width * dpr);
+  c.height = Math.floor(rect.height * dpr);
+
+  const pctx = c.getContext("2d");
+  pctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+}
+
+
+// This is now your Generate button handler
+function generatePreview() {
+  openPreview();
+  // wait a tick so canvas has layout size
+  requestAnimationFrame(() => {
+    resizePreviewCanvas();
+    lastPreviewSeed = getSeedForPreview();
+    renderAbstractPainting(lastPreviewSeed);
+  });
+}
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function smoothstep(t) { return t * t * (3 - 2 * t); }
+
+// Sample the rule grid smoothly at normalized coords u,v in [0,1]
+function sampleRuleField(u, v) {
+  const gx = u * (cols - 1);
+  const gy = v * (rows - 1);
+
+  const x0 = Math.floor(gx), y0 = Math.floor(gy);
+  const x1 = Math.min(cols - 1, x0 + 1);
+  const y1 = Math.min(rows - 1, y0 + 1);
+
+  const tx = smoothstep(gx - x0);
+  const ty = smoothstep(gy - y0);
+
+  const a = grid[y0][x0];
+  const b = grid[y0][x1];
+  const c = grid[y1][x0];
+  const d = grid[y1][x1];
+
+  const ab = lerp(a, b, tx);
+  const cd = lerp(c, d, tx);
+  return lerp(ab, cd, ty); // 0..ruleMax-1-ish
+}
+
+// Cheap deterministic “noise” based on seed (no big libraries)
+function hash2D(ix, iy, seed) {
+  // All integer math in 32-bit space (no BigInt)
+  let x = ix | 0;
+  let y = iy | 0;
+  let s = seed | 0;
+
+  // Mix coordinates + seed
+  let n = (x * 374761393) ^ (y * 668265263) ^ (s * 1442695041);
+  n = (n ^ (n >>> 13)) | 0;
+  n = Math.imul(n, 1274126177);
+  n = (n ^ (n >>> 16)) >>> 0;
+
+  return n / 4294967296; // [0,1)
+}
+
+// Smooth value noise
+function valueNoise(u, v, seed) {
+  const x = u * 8;   // scale controls “turbulence”
+  const y = v * 8;
+
+  const x0 = Math.floor(x), y0 = Math.floor(y);
+  const x1 = x0 + 1, y1 = y0 + 1;
+
+  const tx = smoothstep(x - x0);
+  const ty = smoothstep(y - y0);
+
+  const a = hash2D(x0, y0, seed);
+  const b = hash2D(x1, y0, seed);
+  const c = hash2D(x0, y1, seed);
+  const d = hash2D(x1, y1, seed);
+
+  const ab = lerp(a, b, tx);
+  const cd = lerp(c, d, tx);
+  return lerp(ab, cd, ty); // 0..1
+}
+
+function renderAbstractPainting(seed) {
+  const rng = mulberry32(seed);
+
+  // Canvas size in CSS pixels (because we used setTransform)
+  const rect = previewCanvas.getBoundingClientRect();
+  const W = rect.width;
+  const H = rect.height;
+
+  // Clear
+  pctx.clearRect(0, 0, W, H);
+  pctx.fillStyle = "#050505";
+  pctx.fillRect(0, 0, W, H);
+
+  // A small curated palette (you can add “Palette” later)
+  const palette = [
+    "#e6e6e6", "#cfcfcf",
+    "#b84a3a", "#3a6ea5",
+    "#d4b483", "#7a3e9d"
+  ];
+
+  // --- Layer 1: big soft blobs (composition) ---
+  const blobCount = 18;
+  for (let i = 0; i < blobCount; i++) {
+    const u = rng();
+    const v = rng();
+
+    const rule = sampleRuleField(u, v) / Math.max(1, (ruleMax - 1)); // 0..1
+    const n = valueNoise(u, v, seed);
+
+    const x = u * W;
+    const y = v * H;
+
+    // size influenced by rule + noise
+    const r = (0.06 + 0.22 * n + 0.18 * rule) * Math.min(W, H);
+
+    pctx.globalAlpha = 0.06 + 0.12 * rng();
+    pctx.fillStyle = palette[(i + Math.floor(rule * palette.length)) % palette.length];
+
+    pctx.beginPath();
+    pctx.arc(x, y, r, 0, Math.PI * 2);
+    pctx.fill();
+  }
+
+  // --- Layer 2: flow-field strokes (the “painting”) ---
+  const strokeCount = 9000;
+  const stepsPerStroke = 18;
+
+  // how strongly rules influence direction
+  const ruleStrength = 1.0;
+  // how turbulent noise is
+  const noiseStrength = 1.6;
+
+  pctx.globalAlpha = 0.07;
+  pctx.lineWidth = 1;
+
+  for (let s = 0; s < strokeCount; s++) {
+    let u = rng();
+    let v = rng();
+
+    // choose color based on local rule
+    const baseRule = sampleRuleField(u, v);
+    const colorIndex = Math.floor((baseRule / Math.max(1, ruleMax - 1)) * (palette.length - 1));
+    pctx.strokeStyle = palette[Math.max(0, Math.min(palette.length - 1, colorIndex))];
+
+    let x = u * W;
+    let y = v * H;
+
+    pctx.beginPath();
+    pctx.moveTo(x, y);
+
+    for (let k = 0; k < stepsPerStroke; k++) {
+      const uu = x / W;
+      const vv = y / H;
+
+      // Rule -> base angle (0..2π)
+      const rVal = sampleRuleField(uu, vv);
+      const rNorm = rVal / Math.max(1, (ruleMax - 1));
+      const ruleAngle = rNorm * Math.PI * 2;
+
+      // Noise -> turbulence angle
+      const n = valueNoise(uu, vv, (seed ^ 0x9e3779b9) >>> 0);
+      const noiseAngle = n * Math.PI * 2;
+
+      // Mix
+      const angle = ruleStrength * ruleAngle + noiseStrength * noiseAngle;
+
+      // Step size (slightly variable)
+      const step = 0.8 + 1.8 * rng();
+      x += Math.cos(angle) * step;
+      y += Math.sin(angle) * step;
+
+      pctx.lineTo(x, y);
+
+      // Stop if out of bounds
+      if (x < 0 || x > W || y < 0 || y > H) break;
+    }
+
+    pctx.stroke();
+  }
+
+  // --- Layer 3: a few sharp accents (cubist-ish) ---
+  pctx.globalAlpha = 0.12;
+  for (let i = 0; i < 28; i++) {
+    const u = rng(), v = rng();
+    const x = u * W, y = v * H;
+
+    const rule = sampleRuleField(u, v) / Math.max(1, (ruleMax - 1));
+    const w = (20 + 160 * rng()) * (0.4 + rule);
+    const h = (20 + 160 * rng()) * (0.4 + (1 - rule));
+
+    pctx.fillStyle = palette[Math.floor(rng() * palette.length)];
+    pctx.save();
+    pctx.translate(x, y);
+    pctx.rotate((rng() - 0.5) * 1.0);
+    pctx.fillRect(-w / 2, -h / 2, w, h);
+    pctx.restore();
+  }
+
+  // Reset alpha
+  pctx.globalAlpha = 1;
+
+  if (previewMeta) {
+    previewMeta.textContent = `Seed: ${seed} • Grid: ${cols}×${rows} • Rules: ${ruleMax}`;
+  }
+}
+
+
+previewClose.addEventListener("click", closePreview);
+previewBackdrop.addEventListener("click", closePreview);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !previewModal.classList.contains("hidden")) closePreview();
+});
+
+previewRegenerateBtn.addEventListener("click", () => {
+  // Always generate a new seed for "New variation"
+  lastPreviewSeed = (Math.random() * 1e9) >>> 0;
+  seedInput.value = lastPreviewSeed;
+  resizePreviewCanvas();
+  renderAbstractPainting(lastPreviewSeed);
+});
+
+previewExportPngBtn.addEventListener("click", () => {
+  const url = previewCanvas.toDataURL("image/png");
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `changeable_preview_${Date.now()}.png`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
 undoBtn.addEventListener("click", undo);
 redoBtn.addEventListener("click", redo);
 
@@ -486,6 +753,14 @@ window.addEventListener("keydown", (e) => {
     closeHelp();
   }
 });
+
+window.addEventListener("resize", () => {
+  if (!previewModal.classList.contains("hidden")) {
+    resizePreviewCanvas();
+    renderAbstractPainting(lastPreviewSeed);
+  }
+});
+
 
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 

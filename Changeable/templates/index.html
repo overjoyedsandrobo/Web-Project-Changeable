@@ -39,7 +39,7 @@
             <div class="control-group">
                 <label class="label" for="ruleMax">Rule count</label>
                 <input id="ruleMax" type="number" min="2" max="12" value="6" />
-                <div class="hint">Select a rule in the legend, then paint on the grid</div>
+                <div class="hint">Select a rule in the legend, then paint on the grid.</div>
             </div>
 
             <div class="control-group">
@@ -52,7 +52,6 @@
                     Randomize seed
                 </label>
             </div>
-
 
             <div class="control-group">
                 <label class="label" for="seed">Seed</label>
@@ -90,6 +89,14 @@
                 </div>
             </details>
 
+            <div class="control-group">
+                <label class="label">Export</label>
+                <div class="btn-row">
+                    <button id="exportSvgBtn" class="btn small">Export SVG</button>
+                    <button id="exportPngBtn" class="btn small">Export PNG</button>
+                </div>
+                <div class="hint">Exports the generated structure.</div>
+            </div>
 
             <div class="control-group">
                 <label class="label">
@@ -137,7 +144,6 @@
                 </ul>
             </div>
 
-
             <div class="help-section">
                 <h4>Seed & Variations</h4>
                 <ul>
@@ -161,6 +167,33 @@
                
         </div>
     </div>
+    <div id="previewModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+        <div class="modal-backdrop" id="previewBackdrop"></div>
+
+        <div class="modal-card preview-card">
+            <div class="modal-header">
+                <h3 id="previewTitle">Preview</h3>
+                <button id="previewClose" class="icon-btn" aria-label="Close">✕</button>
+            </div>
+
+            <!-- canvas area -->
+            <div class="preview-body">
+                <canvas id="previewCanvas"></canvas>
+            </div>
+
+            <!-- footer area -->
+            <div class="preview-footer">
+                <div class="preview-actions">
+                    <button id="previewRegenerateBtn" class="btn">New variation</button>
+                    <button id="previewExportPngBtn" class="btn">Export PNG</button>
+                </div>
+
+                <div class="hint" id="previewMeta"></div>
+            </div>
+        </div>
+    </div>
+
+
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
