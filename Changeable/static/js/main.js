@@ -495,7 +495,12 @@ function valueNoise(u, v, seed) {
 
 function renderAbstractPainting(seed) {
   const shade = makeStyleShader(seed);
-  const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
+
+  // 8 “looks” within the same family
+  const variant = ((seed >>> 0) % 8);
+
+  // rng for grain + accents (decoupled from shader seed slightly)
+  const rng = mulberry32(((seed ^ 0x9e3779b9) >>> 0) ^ (variant * 0x85ebca6b));
 
   const rect = previewCanvas.getBoundingClientRect();
   const cssW = Math.max(1, Math.floor(rect.width));
@@ -516,30 +521,65 @@ function renderAbstractPainting(seed) {
   const img = octx.createImageData(W, H);
   const data = img.data;
 
+  // Variant knobs (subtle differences)
+  const V = getVariantParams(variant);
+
   let i = 0;
+  let avgLum = 0;
+
   for (let y = 0; y < H; y++) {
     const v = (y / (H - 1)) * 2 - 1;
+
     for (let x = 0; x < W; x++) {
       const u = (x / (W - 1)) * 2 - 1;
 
-      let [r, g, b, k] = shade(u, v);
+      let r, g, b, k;
+      try {
+        [r, g, b, k] = shade(u, v);
+      } catch {
+        r = g = b = 0.5; k = 0.5;
+      }
 
-      // Vignette varies by style mask k (so it doesn't feel "same background")
+      // SAFETY: NaN/Inf guard + clamp
+      if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b) || !Number.isFinite(k)) {
+        r = g = b = 0.5; k = 0.5;
+      }
+      r = clamp01(r); g = clamp01(g); b = clamp01(b); k = clamp01(k);
+
+      // Variant-driven vignette (different “space” feeling)
       const rr = u * u + v * v;
-      const vig = 1.0 - 0.45 * rr * (0.4 + 0.6 * k);
+      const vig = 1.0 - V.vignette * rr * (0.35 + 0.65 * k);
 
-      // Grain
-      const grain = (rng() - 0.5) * 0.06;
+      // Grain (variant strength)
+      const grain = (rng() - 0.5) * V.grain;
 
-      r = Math.max(0, Math.min(1, r * vig + grain));
-      g = Math.max(0, Math.min(1, g * vig + grain));
-      b = Math.max(0, Math.min(1, b * vig + grain));
+      // Very mild tone curve (variant gamma)
+      r = Math.pow(clamp01(r * vig + grain), V.gamma);
+      g = Math.pow(clamp01(g * vig + grain), V.gamma);
+      b = Math.pow(clamp01(b * vig + grain), V.gamma);
+
+      // Optional tiny “color grade” (warm/cool/green shift)
+      const gr = V.grade;
+      r = clamp01(r + gr.r);
+      g = clamp01(g + gr.g);
+      b = clamp01(b + gr.b);
+
+      // Track brightness to avoid “black seed”
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      avgLum += lum;
 
       data[i++] = (r * 255) | 0;
       data[i++] = (g * 255) | 0;
       data[i++] = (b * 255) | 0;
       data[i++] = 255;
     }
+  }
+
+  avgLum /= (W * H);
+
+  // If too dark, lift it (prevents empty/black results)
+  if (avgLum < 0.035) {
+    liftImageData(img.data, 1.7);
   }
 
   octx.putImageData(img, 0, 0);
@@ -549,9 +589,97 @@ function renderAbstractPainting(seed) {
   pctx.imageSmoothingEnabled = true;
   pctx.drawImage(off, 0, 0, cssW, cssH);
 
-  // Optional “gesture” accents (not always rectangles/circles)
-  const accents = 3 + Math.floor(rng() * 10);
-  pctx.globalAlpha = 0.08 + rng() * 0.18;
+  // Post look pass (keeps background feel but adds variety)
+  applyPostLook(pctx, rng, cssW, cssH, variant);
+
+  // Accents (same idea, but variant biases modes + strength)
+  renderAccents(pctx, shade, rng, cssW, cssH, variant);
+
+  pctx.globalAlpha = 1;
+
+  if (previewMeta) previewMeta.textContent = `Seed: ${seed} • Style: expr-tree • v${variant}`;
+}
+
+function clamp01(x) {
+  return x < 0 ? 0 : x > 1 ? 1 : x;
+}
+
+function liftImageData(data, gain) {
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.min(255, data[i] * gain);
+    data[i + 1] = Math.min(255, data[i + 1] * gain);
+    data[i + 2] = Math.min(255, data[i + 2] * gain);
+  }
+}
+
+function getVariantParams(v) {
+  // All subtle: still “background”, but with different mood/contrast
+  const params = [
+    { vignette: 0.38, grain: 0.06, gamma: 1.05, grade: { r: 0.00, g: 0.00, b: 0.00 } }, // neutral
+    { vignette: 0.30, grain: 0.05, gamma: 0.95, grade: { r: 0.06, g: 0.01, b: -0.02 } }, // warm
+    { vignette: 0.44, grain: 0.045, gamma: 1.10, grade: { r: -0.02, g: 0.02, b: 0.06 } }, // cool
+    { vignette: 0.22, grain: 0.07, gamma: 1.00, grade: { r: 0.02, g: 0.03, b: 0.00 } }, // airy
+    { vignette: 0.55, grain: 0.035, gamma: 1.15, grade: { r: -0.01, g: -0.01, b: 0.00 } }, // deep
+    { vignette: 0.34, grain: 0.08, gamma: 0.92, grade: { r: 0.03, g: 0.00, b: 0.03 } }, // dreamy
+    { vignette: 0.42, grain: 0.05, gamma: 1.00, grade: { r: 0.00, g: 0.04, b: -0.01 } }, // greenish
+    { vignette: 0.26, grain: 0.055, gamma: 1.08, grade: { r: 0.00, g: 0.00, b: 0.00 } }, // crisp
+  ];
+  return params[v] || params[0];
+}
+
+function applyPostLook(ctx, rng, W, H, variant) {
+  ctx.save();
+
+  // subtle film/paper texture
+  const specks = Math.floor((W * H) / (1400 + rng() * 1000));
+  ctx.globalAlpha = 0.04 + rng() * 0.03;
+  ctx.fillStyle = "rgba(255,255,255,1)";
+  for (let i = 0; i < specks; i++) {
+    const x = rng() * W, y = rng() * H;
+    ctx.fillRect(x, y, 1 + rng() * 2, 1 + rng() * 2);
+  }
+
+  // occasional soft blur “bloom” but not always
+  if (variant === 3 || variant === 5) {
+    ctx.globalAlpha = 0.10;
+    for (let k = 0; k < 2; k++) {
+      const dx = (rng() - 0.5) * 10;
+      const dy = (rng() - 0.5) * 10;
+      ctx.drawImage(ctx.canvas, dx, dy, W, H);
+    }
+  }
+
+  // faint scanline / weave for one variant
+  if (variant === 4) {
+    ctx.globalAlpha = 0.05;
+    ctx.fillStyle = "rgba(0,0,0,1)";
+    for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+  }
+
+  ctx.restore();
+}
+
+function pickMode(rng, variant) {
+  // Bias per variant so “shape language” changes
+  // modes: 0 ribbon, 1 shard, 2 hatch, 3 ring, 4 plate
+  const t = rng();
+
+  if (variant === 0) return t < 0.40 ? 4 : t < 0.65 ? 3 : t < 0.80 ? 0 : t < 0.92 ? 2 : 1;
+  if (variant === 1) return t < 0.50 ? 0 : t < 0.72 ? 4 : t < 0.88 ? 3 : 2;
+  if (variant === 2) return t < 0.45 ? 3 : t < 0.75 ? 2 : t < 0.90 ? 4 : 0;
+  if (variant === 3) return t < 0.55 ? 4 : t < 0.78 ? 2 : t < 0.92 ? 0 : 3;
+  if (variant === 4) return t < 0.45 ? 2 : t < 0.70 ? 1 : t < 0.88 ? 3 : 4;
+  if (variant === 5) return t < 0.60 ? 4 : t < 0.80 ? 0 : t < 0.92 ? 3 : 2;
+  if (variant === 6) return t < 0.55 ? 3 : t < 0.78 ? 4 : t < 0.92 ? 2 : 0;
+  return t < 0.50 ? 4 : t < 0.72 ? 3 : t < 0.88 ? 2 : 0;
+}
+
+function renderAccents(pctx, shade, rng, cssW, cssH, variant) {
+  // Fewer + softer accents (background feel), but different per variant
+  const base = 2 + Math.floor(rng() * 6);
+  const accents = base + (variant === 4 ? 2 : 0);
+
+  pctx.globalAlpha = (0.06 + rng() * 0.10) * (variant === 5 ? 0.7 : 1.0);
 
   for (let a = 0; a < accents; a++) {
     const x = rng() * cssW;
@@ -559,12 +687,17 @@ function renderAbstractPainting(seed) {
 
     const uu = (x / cssW) * 2 - 1;
     const vv = (y / cssH) * 2 - 1;
-    const [rr, gg, bb] = shade(uu, vv);
+    let [rr, gg, bb] = shade(uu, vv);
+
+    if (!Number.isFinite(rr) || !Number.isFinite(gg) || !Number.isFinite(bb)) {
+      rr = gg = bb = 0.6;
+    }
+    rr = clamp01(rr); gg = clamp01(gg); bb = clamp01(bb);
 
     pctx.strokeStyle = `rgb(${(rr * 255) | 0}, ${(gg * 255) | 0}, ${(bb * 255) | 0})`;
     pctx.fillStyle = pctx.strokeStyle;
 
-    const mode = Math.floor(rng() * 5);
+    const mode = pickMode(rng, variant);
 
     pctx.save();
     pctx.translate(x, y);
@@ -572,50 +705,56 @@ function renderAbstractPainting(seed) {
 
     if (mode === 0) {
       // ribbon stroke
-      pctx.lineWidth = 2 + rng() * 10;
+      pctx.lineWidth = 2 + rng() * (variant === 1 ? 14 : 9);
       pctx.beginPath();
-      pctx.moveTo(-200, 0);
+      pctx.moveTo(-220, 0);
       for (let t = 0; t < 8; t++) {
-        pctx.quadraticCurveTo(-150 + t * 60, (rng() - 0.5) * 120, -100 + t * 60, (rng() - 0.5) * 120);
+        pctx.quadraticCurveTo(-160 + t * 62, (rng() - 0.5) * 140, -110 + t * 62, (rng() - 0.5) * 140);
       }
       pctx.stroke();
+
     } else if (mode === 1) {
-      // shard polygon
+      // shard polygon (rarer except variant 4)
       const n = 3 + Math.floor(rng() * 6);
       pctx.beginPath();
       for (let k = 0; k < n; k++) {
         const ang = (k / n) * Math.PI * 2;
-        const rad = 20 + rng() * 180;
+        const rad = 30 + rng() * (variant === 4 ? 260 : 160);
         pctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
       }
       pctx.closePath();
+      pctx.globalAlpha *= 0.75;
       pctx.fill();
+      pctx.globalAlpha /= 0.75;
+
     } else if (mode === 2) {
-      // thin hatch block
-      const w = 80 + rng() * 420;
-      const h = 40 + rng() * 220;
-      pctx.globalAlpha *= 0.5;
+      // hatch block
+      const w = 120 + rng() * 520;
+      const h = 60 + rng() * 280;
+      pctx.globalAlpha *= 0.45;
       pctx.fillRect(-w / 2, -h / 2, w, h);
-      pctx.globalAlpha *= 2.0;
+      pctx.globalAlpha *= 2.2;
       pctx.lineWidth = 1;
-      for (let t = -w / 2; t < w / 2; t += 6 + rng() * 10) {
+      for (let t = -w / 2; t < w / 2; t += 7 + rng() * 12) {
         pctx.beginPath();
         pctx.moveTo(t, -h / 2);
-        pctx.lineTo(t + (rng() - 0.5) * 40, h / 2);
+        pctx.lineTo(t + (rng() - 0.5) * 50, h / 2);
         pctx.stroke();
       }
+
     } else if (mode === 3) {
       // ring arc
       pctx.lineWidth = 2 + rng() * 7;
       pctx.beginPath();
-      pctx.arc(0, 0, 40 + rng() * 220, 0, Math.PI * (1 + rng()));
+      pctx.arc(0, 0, 50 + rng() * 260, 0, Math.PI * (0.7 + rng() * 1.3));
       pctx.stroke();
+
     } else {
-      // soft plate
-      const w = 120 + rng() * 520;
-      const h = 80 + rng() * 360;
+      // soft plate (most common)
+      const w = 180 + rng() * 680;
+      const h = 120 + rng() * 480;
       const grad = pctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(w, h));
-      grad.addColorStop(0, `rgba(${(rr * 255) | 0}, ${(gg * 255) | 0}, ${(bb * 255) | 0}, 0.5)`);
+      grad.addColorStop(0, `rgba(${(rr * 255) | 0}, ${(gg * 255) | 0}, ${(bb * 255) | 0}, 0.35)`);
       grad.addColorStop(1, "rgba(0,0,0,0)");
       pctx.fillStyle = grad;
       pctx.fillRect(-w / 2, -h / 2, w, h);
@@ -625,9 +764,8 @@ function renderAbstractPainting(seed) {
   }
 
   pctx.globalAlpha = 1;
-
-  if (previewMeta) previewMeta.textContent = `Seed: ${seed} • Style: expr-tree`;
 }
+
 
 
 
@@ -652,86 +790,155 @@ function buildNode(rng, depth) {
   }
 
   const pick = rng();
-  if (pick < 0.18) return { type: "sin", a: buildNode(rng, depth - 1), f: 1 + rng() * 6 };
-  if (pick < 0.36) return { type: "abs", a: buildNode(rng, depth - 1) };
-  if (pick < 0.54) return { type: "mix",
-    a: buildNode(rng, depth - 1),
-    b: buildNode(rng, depth - 1),
-    t: buildNode(rng, depth - 1)
-  };
-  if (pick < 0.72) return { type: "warp",
-    a: buildNode(rng, depth - 1),
-    wx: buildNode(rng, depth - 1),
-    wy: buildNode(rng, depth - 1),
-    amp: 0.2 + rng() * 1.8
-  };
 
-  // noise node: you already have valueNoise; later swap in better noise variants
-  return { type: "noise", s: (rng() * 1e9) >>> 0, scale: 0.5 + rng() * 6 };
+  if (pick < 0.15)
+    return { type: "sin", a: buildNode(rng, depth - 1), f: 1 + rng() * 6 };
+
+  if (pick < 0.28)
+    return { type: "abs", a: buildNode(rng, depth - 1) };
+
+  if (pick < 0.42)
+    return {
+      type: "mix",
+      a: buildNode(rng, depth - 1),
+      b: buildNode(rng, depth - 1),
+      t: buildNode(rng, depth - 1),
+    };
+
+  if (pick < 0.56)
+    return {
+      type: "warp",
+      a: buildNode(rng, depth - 1),
+      wx: buildNode(rng, depth - 1),
+      wy: buildNode(rng, depth - 1),
+      amp: 0.15 + rng() * 1.6,
+    };
+
+  if (pick < 0.68)
+    return {
+      type: "ridged",
+      a: buildNode(rng, depth - 1),
+    };
+
+  if (pick < 0.80)
+    return {
+      type: "cell",
+      s: (rng() * 1e9) >>> 0,
+      scale: 1.5 + rng() * 10,
+    };
+
+  if (pick < 0.90)
+    return {
+      type: "rotate",
+      src: buildNode(rng, depth - 1),
+      a: rng() * Math.PI * 2,
+    };
+
+  return {
+    type: "noise",
+    s: (rng() * 1e9) >>> 0,
+    scale: 0.5 + rng() * 6,
+  };
 }
+
 
 function evalNode(node, x, y) {
   switch (node.type) {
     case "x": return x;
     case "y": return y;
     case "const": return node.v;
-    case "sin": return Math.sin(evalNode(node.a, x, y) * node.f);
-    case "abs": return Math.abs(evalNode(node.a, x, y));
+
+    case "sin":
+      return Math.sin(evalNode(node.a, x, y) * node.f);
+
+    case "abs":
+      return Math.abs(evalNode(node.a, x, y));
+
     case "mix": {
       const a = evalNode(node.a, x, y);
       const b = evalNode(node.b, x, y);
       const t = 0.5 + 0.5 * evalNode(node.t, x, y);
       return a * (1 - t) + b * t;
     }
+
     case "warp": {
       const wx = evalNode(node.wx, x, y) * node.amp;
       const wy = evalNode(node.wy, x, y) * node.amp;
       return evalNode(node.a, x + wx, y + wy);
     }
+
     case "noise": {
-      // your existing valueNoise(u,v,seed) returns 0..1
       const n = valueNoise(x * node.scale, y * node.scale, node.s);
-      return n * 2 - 1; // -1..1
+      return n * 2 - 1;
+    }
+
+    /* ---------- NEW ---------- */
+
+    case "ridged": {
+      const v = evalNode(node.a, x, y);
+      return 1 - Math.abs(v); // sharp ridges
+    }
+
+    case "cell": {
+      const nx = Math.floor(x * node.scale);
+      const ny = Math.floor(y * node.scale);
+      const n = hash2D(nx, ny, node.s);
+      return n * 2 - 1;
+    }
+
+    case "rotate": {
+      const c = Math.cos(node.a);
+      const s = Math.sin(node.a);
+      const xr = c * x - s * y;
+      const yr = s * x + c * y;
+      return evalNode(node.src, xr, yr);
     }
   }
 }
 
+
 // 3) Seed -> style program (3 different trees = different “language”)
 function makeStyleShader(seed) {
   const rng = xorshift32(seed);
-  const depth = 3 + Math.floor(rng() * 4); // 3..6
+  const depth = 3 + Math.floor(rng() * 4);
+
   const rTree = buildNode(rng, depth);
   const gTree = buildNode(rng, depth);
   const bTree = buildNode(rng, depth);
   const maskTree = buildNode(rng, depth);
 
-  // palette-ish mapping also generated from seed:
   const gamma = 0.7 + rng() * 1.8;
   const contrast = 0.8 + rng() * 2.2;
 
-  return function shade(u, v) {
-    // u,v in [-1,1]
-    let r = evalNode(rTree, u, v);
-    let g = evalNode(gTree, u, v);
-    let b = evalNode(bTree, u, v);
-    let m = evalNode(maskTree, u, v);
+  // NEW: global coordinate skew per style
+  const skewX = (rng() - 0.5) * 0.6;
+  const skewY = (rng() - 0.5) * 0.6;
+  const scale = 0.7 + rng() * 0.8;
 
-    // normalize-ish
+  return function shade(u, v) {
+    // style-dependent coordinate transform
+    const x = (u + v * skewX) * scale;
+    const y = (v + u * skewY) * scale;
+
+    let r = evalNode(rTree, x, y);
+    let g = evalNode(gTree, x, y);
+    let b = evalNode(bTree, x, y);
+    let m = evalNode(maskTree, x, y);
+
     r = Math.tanh(r * contrast);
     g = Math.tanh(g * contrast);
     b = Math.tanh(b * contrast);
 
-    // mask influences palette curve
     const k = 0.5 + 0.5 * Math.tanh(m);
 
-    // map [-1,1] -> [0,1]
     r = Math.pow(0.5 + 0.5 * (r * (0.7 + 0.6 * k)), gamma);
     g = Math.pow(0.5 + 0.5 * (g * (0.7 + 0.6 * (1 - k))), gamma);
     b = Math.pow(0.5 + 0.5 * (b * (0.7 + 0.6 * (0.5 + 0.5 * k))), gamma);
 
-    return [r, g, b, k]; // include k for composition decisions
+    return [r, g, b, k];
   };
 }
+
 
 
 
