@@ -416,7 +416,6 @@ function resizePreviewCanvas() {
   c.width = Math.floor(rect.width * dpr);
   c.height = Math.floor(rect.height * dpr);
 
-  const pctx = c.getContext("2d");
   pctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
 }
 
@@ -495,130 +494,246 @@ function valueNoise(u, v, seed) {
 }
 
 function renderAbstractPainting(seed) {
-  const rng = mulberry32(seed);
+  const shade = makeStyleShader(seed);
+  const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
 
-  // Canvas size in CSS pixels (because we used setTransform)
   const rect = previewCanvas.getBoundingClientRect();
-  const W = rect.width;
-  const H = rect.height;
+  const cssW = Math.max(1, Math.floor(rect.width));
+  const cssH = Math.max(1, Math.floor(rect.height));
 
-  // Clear
-  pctx.clearRect(0, 0, W, H);
-  pctx.fillStyle = "#050505";
-  pctx.fillRect(0, 0, W, H);
+  // Internal render resolution (cap for speed)
+  const maxW = 1400;
+  const down = Math.min(1, maxW / cssW);
+  const W = Math.max(1, Math.floor(cssW * down));
+  const H = Math.max(1, Math.floor(cssH * down));
 
-  // A small curated palette (you can add “Palette” later)
-  const palette = [
-    "#e6e6e6", "#cfcfcf",
-    "#b84a3a", "#3a6ea5",
-    "#d4b483", "#7a3e9d"
-  ];
+  // Offscreen pixel buffer
+  const off = document.createElement("canvas");
+  off.width = W;
+  off.height = H;
+  const octx = off.getContext("2d", { willReadFrequently: true });
 
-  // --- Layer 1: big soft blobs (composition) ---
-  const blobCount = 18;
-  for (let i = 0; i < blobCount; i++) {
-    const u = rng();
-    const v = rng();
+  const img = octx.createImageData(W, H);
+  const data = img.data;
 
-    const rule = sampleRuleField(u, v) / Math.max(1, (ruleMax - 1)); // 0..1
-    const n = valueNoise(u, v, seed);
+  let i = 0;
+  for (let y = 0; y < H; y++) {
+    const v = (y / (H - 1)) * 2 - 1;
+    for (let x = 0; x < W; x++) {
+      const u = (x / (W - 1)) * 2 - 1;
 
-    const x = u * W;
-    const y = v * H;
+      let [r, g, b, k] = shade(u, v);
 
-    // size influenced by rule + noise
-    const r = (0.06 + 0.22 * n + 0.18 * rule) * Math.min(W, H);
+      // Vignette varies by style mask k (so it doesn't feel "same background")
+      const rr = u * u + v * v;
+      const vig = 1.0 - 0.45 * rr * (0.4 + 0.6 * k);
 
-    pctx.globalAlpha = 0.06 + 0.12 * rng();
-    pctx.fillStyle = palette[(i + Math.floor(rule * palette.length)) % palette.length];
+      // Grain
+      const grain = (rng() - 0.5) * 0.06;
 
-    pctx.beginPath();
-    pctx.arc(x, y, r, 0, Math.PI * 2);
-    pctx.fill();
-  }
+      r = Math.max(0, Math.min(1, r * vig + grain));
+      g = Math.max(0, Math.min(1, g * vig + grain));
+      b = Math.max(0, Math.min(1, b * vig + grain));
 
-  // --- Layer 2: flow-field strokes (the “painting”) ---
-  const strokeCount = 9000;
-  const stepsPerStroke = 18;
-
-  // how strongly rules influence direction
-  const ruleStrength = 1.0;
-  // how turbulent noise is
-  const noiseStrength = 1.6;
-
-  pctx.globalAlpha = 0.07;
-  pctx.lineWidth = 1;
-
-  for (let s = 0; s < strokeCount; s++) {
-    let u = rng();
-    let v = rng();
-
-    // choose color based on local rule
-    const baseRule = sampleRuleField(u, v);
-    const colorIndex = Math.floor((baseRule / Math.max(1, ruleMax - 1)) * (palette.length - 1));
-    pctx.strokeStyle = palette[Math.max(0, Math.min(palette.length - 1, colorIndex))];
-
-    let x = u * W;
-    let y = v * H;
-
-    pctx.beginPath();
-    pctx.moveTo(x, y);
-
-    for (let k = 0; k < stepsPerStroke; k++) {
-      const uu = x / W;
-      const vv = y / H;
-
-      // Rule -> base angle (0..2π)
-      const rVal = sampleRuleField(uu, vv);
-      const rNorm = rVal / Math.max(1, (ruleMax - 1));
-      const ruleAngle = rNorm * Math.PI * 2;
-
-      // Noise -> turbulence angle
-      const n = valueNoise(uu, vv, (seed ^ 0x9e3779b9) >>> 0);
-      const noiseAngle = n * Math.PI * 2;
-
-      // Mix
-      const angle = ruleStrength * ruleAngle + noiseStrength * noiseAngle;
-
-      // Step size (slightly variable)
-      const step = 0.8 + 1.8 * rng();
-      x += Math.cos(angle) * step;
-      y += Math.sin(angle) * step;
-
-      pctx.lineTo(x, y);
-
-      // Stop if out of bounds
-      if (x < 0 || x > W || y < 0 || y > H) break;
+      data[i++] = (r * 255) | 0;
+      data[i++] = (g * 255) | 0;
+      data[i++] = (b * 255) | 0;
+      data[i++] = 255;
     }
-
-    pctx.stroke();
   }
 
-  // --- Layer 3: a few sharp accents (cubist-ish) ---
-  pctx.globalAlpha = 0.12;
-  for (let i = 0; i < 28; i++) {
-    const u = rng(), v = rng();
-    const x = u * W, y = v * H;
+  octx.putImageData(img, 0, 0);
 
-    const rule = sampleRuleField(u, v) / Math.max(1, (ruleMax - 1));
-    const w = (20 + 160 * rng()) * (0.4 + rule);
-    const h = (20 + 160 * rng()) * (0.4 + (1 - rule));
+  // Draw into preview (pctx is already setTransform(dpr,...))
+  pctx.clearRect(0, 0, cssW, cssH);
+  pctx.imageSmoothingEnabled = true;
+  pctx.drawImage(off, 0, 0, cssW, cssH);
 
-    pctx.fillStyle = palette[Math.floor(rng() * palette.length)];
+  // Optional “gesture” accents (not always rectangles/circles)
+  const accents = 3 + Math.floor(rng() * 10);
+  pctx.globalAlpha = 0.08 + rng() * 0.18;
+
+  for (let a = 0; a < accents; a++) {
+    const x = rng() * cssW;
+    const y = rng() * cssH;
+
+    const uu = (x / cssW) * 2 - 1;
+    const vv = (y / cssH) * 2 - 1;
+    const [rr, gg, bb] = shade(uu, vv);
+
+    pctx.strokeStyle = `rgb(${(rr * 255) | 0}, ${(gg * 255) | 0}, ${(bb * 255) | 0})`;
+    pctx.fillStyle = pctx.strokeStyle;
+
+    const mode = Math.floor(rng() * 5);
+
     pctx.save();
     pctx.translate(x, y);
-    pctx.rotate((rng() - 0.5) * 1.0);
-    pctx.fillRect(-w / 2, -h / 2, w, h);
+    pctx.rotate((rng() - 0.5) * Math.PI * 2);
+
+    if (mode === 0) {
+      // ribbon stroke
+      pctx.lineWidth = 2 + rng() * 10;
+      pctx.beginPath();
+      pctx.moveTo(-200, 0);
+      for (let t = 0; t < 8; t++) {
+        pctx.quadraticCurveTo(-150 + t * 60, (rng() - 0.5) * 120, -100 + t * 60, (rng() - 0.5) * 120);
+      }
+      pctx.stroke();
+    } else if (mode === 1) {
+      // shard polygon
+      const n = 3 + Math.floor(rng() * 6);
+      pctx.beginPath();
+      for (let k = 0; k < n; k++) {
+        const ang = (k / n) * Math.PI * 2;
+        const rad = 20 + rng() * 180;
+        pctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+      }
+      pctx.closePath();
+      pctx.fill();
+    } else if (mode === 2) {
+      // thin hatch block
+      const w = 80 + rng() * 420;
+      const h = 40 + rng() * 220;
+      pctx.globalAlpha *= 0.5;
+      pctx.fillRect(-w / 2, -h / 2, w, h);
+      pctx.globalAlpha *= 2.0;
+      pctx.lineWidth = 1;
+      for (let t = -w / 2; t < w / 2; t += 6 + rng() * 10) {
+        pctx.beginPath();
+        pctx.moveTo(t, -h / 2);
+        pctx.lineTo(t + (rng() - 0.5) * 40, h / 2);
+        pctx.stroke();
+      }
+    } else if (mode === 3) {
+      // ring arc
+      pctx.lineWidth = 2 + rng() * 7;
+      pctx.beginPath();
+      pctx.arc(0, 0, 40 + rng() * 220, 0, Math.PI * (1 + rng()));
+      pctx.stroke();
+    } else {
+      // soft plate
+      const w = 120 + rng() * 520;
+      const h = 80 + rng() * 360;
+      const grad = pctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(w, h));
+      grad.addColorStop(0, `rgba(${(rr * 255) | 0}, ${(gg * 255) | 0}, ${(bb * 255) | 0}, 0.5)`);
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      pctx.fillStyle = grad;
+      pctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+
     pctx.restore();
   }
 
-  // Reset alpha
   pctx.globalAlpha = 1;
 
-  if (previewMeta) {
-    previewMeta.textContent = `Seed: ${seed} • Grid: ${cols}×${rows} • Rules: ${ruleMax}`;
+  if (previewMeta) previewMeta.textContent = `Seed: ${seed} • Style: expr-tree`;
+}
+
+
+
+// 1) Seed -> RNG
+function xorshift32(seed) {
+  let x = seed >>> 0;
+  return () => {
+    x ^= x << 13; x >>>= 0;
+    x ^= x >>> 17; x >>>= 0;
+    x ^= x << 5;  x >>>= 0;
+    return (x >>> 0) / 4294967296;
+  };
+}
+
+// 2) Build an expression tree from the seed
+function buildNode(rng, depth) {
+  if (depth <= 0) {
+    const t = rng();
+    if (t < 0.33) return { type: "x" };
+    if (t < 0.66) return { type: "y" };
+    return { type: "const", v: rng() * 2 - 1 };
+  }
+
+  const pick = rng();
+  if (pick < 0.18) return { type: "sin", a: buildNode(rng, depth - 1), f: 1 + rng() * 6 };
+  if (pick < 0.36) return { type: "abs", a: buildNode(rng, depth - 1) };
+  if (pick < 0.54) return { type: "mix",
+    a: buildNode(rng, depth - 1),
+    b: buildNode(rng, depth - 1),
+    t: buildNode(rng, depth - 1)
+  };
+  if (pick < 0.72) return { type: "warp",
+    a: buildNode(rng, depth - 1),
+    wx: buildNode(rng, depth - 1),
+    wy: buildNode(rng, depth - 1),
+    amp: 0.2 + rng() * 1.8
+  };
+
+  // noise node: you already have valueNoise; later swap in better noise variants
+  return { type: "noise", s: (rng() * 1e9) >>> 0, scale: 0.5 + rng() * 6 };
+}
+
+function evalNode(node, x, y) {
+  switch (node.type) {
+    case "x": return x;
+    case "y": return y;
+    case "const": return node.v;
+    case "sin": return Math.sin(evalNode(node.a, x, y) * node.f);
+    case "abs": return Math.abs(evalNode(node.a, x, y));
+    case "mix": {
+      const a = evalNode(node.a, x, y);
+      const b = evalNode(node.b, x, y);
+      const t = 0.5 + 0.5 * evalNode(node.t, x, y);
+      return a * (1 - t) + b * t;
+    }
+    case "warp": {
+      const wx = evalNode(node.wx, x, y) * node.amp;
+      const wy = evalNode(node.wy, x, y) * node.amp;
+      return evalNode(node.a, x + wx, y + wy);
+    }
+    case "noise": {
+      // your existing valueNoise(u,v,seed) returns 0..1
+      const n = valueNoise(x * node.scale, y * node.scale, node.s);
+      return n * 2 - 1; // -1..1
+    }
   }
 }
+
+// 3) Seed -> style program (3 different trees = different “language”)
+function makeStyleShader(seed) {
+  const rng = xorshift32(seed);
+  const depth = 3 + Math.floor(rng() * 4); // 3..6
+  const rTree = buildNode(rng, depth);
+  const gTree = buildNode(rng, depth);
+  const bTree = buildNode(rng, depth);
+  const maskTree = buildNode(rng, depth);
+
+  // palette-ish mapping also generated from seed:
+  const gamma = 0.7 + rng() * 1.8;
+  const contrast = 0.8 + rng() * 2.2;
+
+  return function shade(u, v) {
+    // u,v in [-1,1]
+    let r = evalNode(rTree, u, v);
+    let g = evalNode(gTree, u, v);
+    let b = evalNode(bTree, u, v);
+    let m = evalNode(maskTree, u, v);
+
+    // normalize-ish
+    r = Math.tanh(r * contrast);
+    g = Math.tanh(g * contrast);
+    b = Math.tanh(b * contrast);
+
+    // mask influences palette curve
+    const k = 0.5 + 0.5 * Math.tanh(m);
+
+    // map [-1,1] -> [0,1]
+    r = Math.pow(0.5 + 0.5 * (r * (0.7 + 0.6 * k)), gamma);
+    g = Math.pow(0.5 + 0.5 * (g * (0.7 + 0.6 * (1 - k))), gamma);
+    b = Math.pow(0.5 + 0.5 * (b * (0.7 + 0.6 * (0.5 + 0.5 * k))), gamma);
+
+    return [r, g, b, k]; // include k for composition decisions
+  };
+}
+
+
 
 
 previewClose.addEventListener("click", closePreview);
