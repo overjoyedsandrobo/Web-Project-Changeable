@@ -37,27 +37,27 @@
             </div>
 
             <div class="control-group">
-                <label class="label" for="ruleMax">Rule count</label>
-                <input id="ruleMax" type="number" min="2" max="12" value="6" />
-                <div class="hint">Select a rule in the legend, then paint on the grid.</div>
+                <div class="legend" id="legend"></div>
             </div>
 
             <div class="control-group">
                 <button id="generateBtn" class="btn">Generate</button>
             </div>
+            
+            
+            <div class="control-group">
+                <label class="label" for="seed">Seed</label>
+                <input id="seed" type="number" min="0" max="999999999" value="123456789" />
+                <div class="hint">Same grid + same seed = same output.</div>
+            </div>
 
             <div class="control-group">
                 <label class="label">
-                    <input id="randomizeSeed" type="checkbox" checked />
-                    Randomize seed
+                    <input id="showGrid" type="checkbox" checked />
+                    Show grid overlay
                 </label>
             </div>
-
-            <div class="control-group">
-                <label class="label" for="seed">Seed</label>
-                <input id="seed" type="number" min="0" max="999999999" value="12345" />
-                <div class="hint">Same grid + same seed = same output.</div>
-            </div>
+            
             <div class="control-group">
                 <label class="label">Symmetry</label>
                 <div class="btn-row">
@@ -98,16 +98,6 @@
                 <div class="hint">Exports the generated structure.</div>
             </div>
 
-            <div class="control-group">
-                <label class="label">
-                    <input id="showGrid" type="checkbox" checked />
-                    Show grid overlay
-                </label>
-            </div>
-
-            <div class="control-group">
-                <div class="legend" id="legend"></div>
-            </div>
             <div class="controls-bottom-spacer"></div>
 
             

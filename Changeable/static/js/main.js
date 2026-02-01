@@ -3,7 +3,6 @@ const ctx = canvas.getContext("2d");
 
 const colsInput = document.getElementById("cols");
 const rowsInput = document.getElementById("rows");
-const ruleMaxInput = document.getElementById("ruleMax");
 const clearBtn = document.getElementById("clearBtn");
 
 const helpBtn = document.getElementById("helpBtn");
@@ -43,10 +42,10 @@ const pctx = previewCanvas.getContext("2d");
 const undoStack = [];
 const redoStack = [];
 const HISTORY_LIMIT = 100;
+const ruleCount = 12
 
 let cols = parseInt(colsInput.value, 10);
 let rows = parseInt(rowsInput.value, 10);
-let ruleMax = parseInt(ruleMaxInput.value, 10);
 
 let grid = [];
 let hoverCell = null;
@@ -99,11 +98,9 @@ function clampInt(v, min, max) {
 function applySettings() {
   cols = clampInt(colsInput.value, 4, 64);
   rows = clampInt(rowsInput.value, 4, 64);
-  ruleMax = clampInt(ruleMaxInput.value, 2, 12);
 
   colsInput.value = cols;
   rowsInput.value = rows;
-  ruleMaxInput.value = ruleMax;
 
   grid = createGrid(rows, cols);
 
@@ -117,7 +114,7 @@ function applySettings() {
 function ruleToFill(rule) {
   // 0 stays black; others map to grayscale steps
   if (rule === 0) return "#000000";
-  const t = rule / (ruleMax - 1); // 0..1
+  const t = rule / (ruleCount); // 0..1
   const v = Math.floor(40 + t * 160); // 40..200
   return `rgb(${v},${v},${v})`;
 }
@@ -170,15 +167,10 @@ function draw() {
   }
 }
 
-function generatePreview() {
-  console.log("TODO: preview generator");
-}
-
-
 function renderLegend() {
   legendEl.innerHTML = "";
 
-  for (let r = 0; r < ruleMax; r++) {
+  for (let r = 1; r < ruleCount+1; r++) {
     const item = document.createElement("div");
     item.className = "legend-item" + (r === activeRule ? " selected" : "");
     item.dataset.rule = String(r);
@@ -189,7 +181,7 @@ function renderLegend() {
 
     const label = document.createElement("span");
     label.className = "legend-label";
-    label.textContent = r === 0 ? "0 Empty (erase)" : `${r}`;
+    label.textContent = r;
 
     item.appendChild(swatch);
     item.appendChild(label);
@@ -239,7 +231,6 @@ function exportDesign() {
   return JSON.stringify({
     cols,
     rows,
-    ruleMax,
     seed: clampInt(seedInput.value, 0, 999999999),
     grid,
   });
@@ -250,11 +241,9 @@ function importDesign(text) {
 
   cols = clampInt(obj.cols, 4, 64);
   rows = clampInt(obj.rows, 4, 64);
-  ruleMax = clampInt(obj.ruleMax, 2, 12);
 
   colsInput.value = cols;
   rowsInput.value = rows;
-  ruleMaxInput.value = ruleMax;
 
   seedInput.value = clampInt(obj.seed ?? 0, 0, 999999999);
 
@@ -334,7 +323,6 @@ function snapshotState() {
   return {
     rows,
     cols,
-    ruleMax,
     grid: cloneGrid(grid),
   };
 }
@@ -342,12 +330,11 @@ function snapshotState() {
 function applyState(state) {
   rows = state.rows;
   cols = state.cols;
-  ruleMax = state.ruleMax;
   grid = cloneGrid(state.grid);
 
   rowsInput.value = rows;
   colsInput.value = cols;
-  ruleMaxInput.value = ruleMax;
+
 
   hoverCell = null;
 
@@ -453,7 +440,7 @@ function sampleRuleField(u, v) {
 
   const ab = lerp(a, b, tx);
   const cd = lerp(c, d, tx);
-  return lerp(ab, cd, ty); // 0..ruleMax-1-ish
+  return lerp(ab, cd, ty); 
 }
 
 // Cheap deterministic “noise” based on seed (no big libraries)
@@ -588,6 +575,8 @@ function renderAbstractPainting(seed) {
   pctx.clearRect(0, 0, cssW, cssH);
   pctx.imageSmoothingEnabled = true;
   pctx.drawImage(off, 0, 0, cssW, cssH);
+  renderGridObject(pctx, shade, cssW, cssH);
+
 
   // Post look pass (keeps background feel but adds variety)
   applyPostLook(pctx, rng, cssW, cssH, variant);
@@ -766,6 +755,289 @@ function renderAccents(pctx, shade, rng, cssW, cssH, variant) {
   pctx.globalAlpha = 1;
 }
 
+function renderGridObject(ctx, shade, W, H) {
+  const off = document.createElement("canvas");
+  off.width = W;
+  off.height = H;
+  const octx = off.getContext("2d", { willReadFrequently: true });
+
+  const img = octx.createImageData(W, H);
+  const d = img.data;
+
+  // controls edge softness (small = crisp blocks, bigger = softer)
+  const edge = 1.25;
+
+  // per-rule “effect table” (change/add as you want)
+  // NOTE: rule 0 is still treated as empty internally.
+  const effects = {
+    1: { type: "stretchX", amt: 0.55 },
+    2: { type: "fadeRight", amt: 1.00 },
+    3: { type: "chaosColor", amt: 1.00 },
+    4: { type: "swirl", amt: 1.10 },
+    5: { type: "pixelate", amt: 10.0 },
+    6: { type: "wave", amt: 0.90 },
+    7: { type: "holes", amt: 1.00 },
+    8: { type: "outline", amt: 1.00 },
+    9: { type: "angular", amt: 1.00 },
+    10:{ type: "drip", amt: 1.00 },
+    11:{ type: "mirror", amt: 1.00 },
+    12:{ type: "invert", amt: 1.00 },
+  };
+
+  function clamp01(x){ return x<0?0:x>1?1:x; }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function smoothstep(t){ return t*t*(3-2*t); }
+
+  // soft box alpha (for nice edges)
+  function boxAlpha(px, py, cx0, cy0, cx1, cy1) {
+    // distance to nearest edge
+    const dx = Math.min(px - cx0, cx1 - px);
+    const dy = Math.min(py - cy0, cy1 - py);
+    const dd = Math.min(dx, dy);
+    // dd in pixels: fade within 'edge'
+    const t = clamp01(dd / edge);
+    return smoothstep(t);
+  }
+
+  function fract(x){ return x - Math.floor(x); }
+
+  function applyEffect(rule, u, v, lu, lv) {
+    // u,v in [-1,1] across whole canvas
+    // lu,lv in [-1,1] inside the current cell
+    const e = effects[rule];
+    let uu = u, vv = v;
+    let alphaMul = 1.0;
+    let colorMode = 0;
+
+    if (!e) return { uu, vv, alphaMul, colorMode };
+
+    switch (e.type) {
+      case "stretchX": {
+        // stretch cells horizontally around their center
+        const s = 1.0 + e.amt;
+        uu = u * s;
+        break;
+      }
+      case "fadeRight": {
+        // make the block fade to transparent within the cell (right side)
+        const t = (lu * 0.5 + 0.5); // 0..1
+        alphaMul *= (1.0 - t);
+        break;
+      }
+      case "chaosColor": {
+        // color chaos from slight coordinate jitter
+        const j = (Math.sin((u*9.7 + v*6.3) * 6.0) * 0.08);
+        uu = u + j;
+        vv = v - j;
+        colorMode = 1;
+        break;
+      }
+      case "swirl": {
+        // swirl inside the cell
+        const r = Math.sqrt(lu*lu + lv*lv);
+        const a = Math.atan2(lv, lu) + e.amt * r * 1.6;
+        const nx = Math.cos(a) * r;
+        const ny = Math.sin(a) * r;
+        // reinsert into global coords slightly
+        uu = u + nx * 0.12;
+        vv = v + ny * 0.12;
+        break;
+      }
+      case "pixelate": {
+        // pixelation: sample shade on a coarse grid
+        const step = e.amt;
+        uu = (Math.floor((u*0.5+0.5)*step)/step)*2-1;
+        vv = (Math.floor((v*0.5+0.5)*step)/step)*2-1;
+        break;
+      }
+      case "wave": {
+        // wavy displacement
+        uu = u + Math.sin((v*7.0 + u*2.0) * 3.0) * 0.08 * e.amt;
+        vv = v + Math.sin((u*6.0) * 2.3) * 0.05 * e.amt;
+        break;
+      }
+      case "holes": {
+        // punch random holes in blocks (stable-ish per-cell)
+        const t = Math.sin((lu*12.1 + lv*9.7) * 3.1);
+        if (t > 0.65) alphaMul *= 0.0;
+        break;
+      }
+      case "outline": {
+        // outline will be handled later by edge detection (flag mode)
+        colorMode = 2;
+        break;
+      }
+      case "angular": {
+        // clip to triangle-ish region inside cell
+        const t = Math.abs(lu) + Math.abs(lv);
+        if (t > 0.95) alphaMul *= 0.0;
+        break;
+      }
+      case "drip": {
+        // smear downward: sample from above
+        vv = v - Math.max(0, lv) * 0.25;
+        break;
+      }
+      case "mirror": {
+        // mirror inside cell
+        uu = (lu < 0 ? u : (u - lu*0.2));
+        break;
+      }
+      case "invert": {
+        colorMode = 3;
+        break;
+      }
+    }
+
+    return { uu, vv, alphaMul, colorMode };
+  }
+
+  // render object pixels
+  let idx = 0;
+  for (let y = 0; y < H; y++) {
+    const fy = (y + 0.5) / H;           // 0..1
+    const v01 = fy;
+    const v = v01 * 2 - 1;             // -1..1
+
+    const gy = Math.floor(v01 * rows);
+    const cy = Math.max(0, Math.min(rows - 1, gy));
+    const cellY0 = (cy / rows) * H;
+    const cellY1 = ((cy + 1) / rows) * H;
+
+    // local inside cell in [-1,1]
+    const lv = ((fy * rows) - cy) * 2 - 1;
+
+    for (let x = 0; x < W; x++) {
+      const fx = (x + 0.5) / W;
+      const u01 = fx;
+      const u = u01 * 2 - 1;
+
+      const gx = Math.floor(u01 * cols);
+      const cx = Math.max(0, Math.min(cols - 1, gx));
+
+      const rule = grid[cy][cx] | 0;
+
+      if (rule === 0) {
+        // empty
+        d[idx++] = 0; d[idx++] = 0; d[idx++] = 0; d[idx++] = 0;
+        continue;
+      }
+
+      const cellX0 = (cx / cols) * W;
+      const cellX1 = ((cx + 1) / cols) * W;
+      const lu = ((fx * cols) - cx) * 2 - 1;
+
+      // crisp block alpha + soft edge
+      let a = boxAlpha(x + 0.5, y + 0.5, cellX0, cellY0, cellX1, cellY1);
+
+      // rule effect
+      const ef = applyEffect(rule, u, v, lu, lv);
+      a *= ef.alphaMul;
+
+      // sample background shader for the object’s “ink”
+      let [br, bg, bb] = shade(ef.uu, ef.vv);
+
+      // foreground color = background color, but pushed brighter + higher saturation
+      let r = br, g = bg, b = bb;
+      const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+
+      // lift away from mid-gray (prevents blending)
+      const lift = 0.18;            // 0.10–0.30
+      r = clamp01(r + lift);
+      g = clamp01(g + lift);
+      b = clamp01(b + lift);
+
+      // saturation boost
+      const sat = 1.35;             // 1.1–1.7
+      r = clamp01(lum + (r - lum) * sat);
+      g = clamp01(lum + (g - lum) * sat);
+      b = clamp01(lum + (b - lum) * sat);
+
+      // extra color modes
+      if (ef.colorMode === 1) {
+        // chaos color boost
+        const sat = 1.35;
+        const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+        r = clamp01(lum + (r - lum) * sat);
+        g = clamp01(lum + (g - lum) * sat);
+        b = clamp01(lum + (b - lum) * sat);
+      } else if (ef.colorMode === 3) {
+        // invert
+        r = 1 - r; g = 1 - g; b = 1 - b;
+      }
+
+      // final alpha: keep object strong but not neon-white
+      const alpha = clamp01(a) * 0.92;
+
+      d[idx++] = (r * 255) | 0;
+      d[idx++] = (g * 255) | 0;
+      d[idx++] = (b * 255) | 0;
+      d[idx++] = (alpha * 255) | 0;
+    }
+  }
+
+  octx.putImageData(img, 0, 0);
+
+    // POP SETTINGS (tweak these)
+  const SHADOW_ALPHA = 0.55;
+  const SHADOW_BLUR  = 22;
+  const SHADOW_Y     = 10;
+
+  const RIM_ALPHA = 0.25;    // soft glow edge
+  const OUTLINE_ALPHA = 0.85;
+  const OUTLINE_PX = 2;      // thickness
+
+  ctx.save();
+
+  // 1) Shadow (darkens behind shape => separation)
+  ctx.globalCompositeOperation = "multiply";
+  ctx.globalAlpha = SHADOW_ALPHA;
+  ctx.filter = `blur(${SHADOW_BLUR}px)`;
+  ctx.drawImage(off, 0, SHADOW_Y);
+
+  // 2) Solid object (normal)
+  ctx.filter = "none";
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1.0;
+  ctx.drawImage(off, 0, 0);
+
+  // 3) Rim light / glow (optional, helps on dark BG)
+  ctx.globalCompositeOperation = "screen";
+  ctx.globalAlpha = RIM_ALPHA;
+  ctx.filter = "blur(6px)";
+  ctx.drawImage(off, 0, 0);
+
+  // 4) Crisp outline (makes silhouette readable always)
+  ctx.filter = "none";
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = OUTLINE_ALPHA;
+
+  // outline trick: stamp mask around itself
+  for (let oy = -OUTLINE_PX; oy <= OUTLINE_PX; oy++) {
+    for (let ox = -OUTLINE_PX; ox <= OUTLINE_PX; ox++) {
+      if (ox === 0 && oy === 0) continue;
+      ctx.drawImage(off, ox, oy);
+    }
+  }
+
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalCompositeOperation = "overlay"; // punchy
+  ctx.globalAlpha = 0.25;                  // keep subtle
+  ctx.filter = "contrast(1.25) saturate(1.35)";
+  ctx.drawImage(off, 0, 0);               // apply only where mask is
+  
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  ctx.globalAlpha = 0.18;
+  ctx.filter = "blur(10px)";
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+
+}
 
 
 
@@ -929,6 +1201,12 @@ function makeStyleShader(seed) {
     g = Math.tanh(g * contrast);
     b = Math.tanh(b * contrast);
 
+    const sat = 1.18; // try 1.10–1.35
+    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+    r = clamp01(lum + (r - lum) * sat);
+    g = clamp01(lum + (g - lum) * sat);
+    b = clamp01(lum + (b - lum) * sat);
+
     const k = 0.5 + 0.5 * Math.tanh(m);
 
     r = Math.pow(0.5 + 0.5 * (r * (0.7 + 0.6 * k)), gamma);
@@ -937,6 +1215,22 @@ function makeStyleShader(seed) {
 
     return [r, g, b, k];
   };
+}
+
+function hashGrid32(grid) {
+  // FNV-ish hash, stable in JS 32-bit
+  let h = 2166136261 >>> 0;
+  for (let y = 0; y < grid.length; y++) {
+    const row = grid[y];
+    for (let x = 0; x < row.length; x++) {
+      h ^= (row[x] & 0xff);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+  }
+  h ^= (cols & 0xff); h = Math.imul(h, 16777619) >>> 0;
+  h ^= (rows & 0xff); h = Math.imul(h, 16777619) >>> 0;
+  h ^= (ruleCount & 0xff); h = Math.imul(h, 16777619) >>> 0;
+  return h >>> 0;
 }
 
 
@@ -1089,7 +1383,6 @@ canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 // Inputs
 colsInput.addEventListener("change", applySettings);
 rowsInput.addEventListener("change", applySettings);
-ruleMaxInput.addEventListener("change", applySettings);
 showGridEl.addEventListener("change", draw);
 
 // Init
