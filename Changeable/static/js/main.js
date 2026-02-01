@@ -756,6 +756,7 @@ function renderAccents(pctx, shade, rng, cssW, cssH, variant) {
 }
 
 function renderGridObject(ctx, shade, W, H) {
+
   const off = document.createElement("canvas");
   off.width = W;
   off.height = H;
@@ -783,114 +784,6 @@ function renderGridObject(ctx, shade, W, H) {
     11:{ type: "mirror", amt: 1.00 },
     12:{ type: "invert", amt: 1.00 },
   };
-
-  function clamp01(x){ return x<0?0:x>1?1:x; }
-  function lerp(a,b,t){ return a+(b-a)*t; }
-  function smoothstep(t){ return t*t*(3-2*t); }
-
-  // soft box alpha (for nice edges)
-  function boxAlpha(px, py, cx0, cy0, cx1, cy1) {
-    // distance to nearest edge
-    const dx = Math.min(px - cx0, cx1 - px);
-    const dy = Math.min(py - cy0, cy1 - py);
-    const dd = Math.min(dx, dy);
-    // dd in pixels: fade within 'edge'
-    const t = clamp01(dd / edge);
-    return smoothstep(t);
-  }
-
-  function fract(x){ return x - Math.floor(x); }
-
-  function applyEffect(rule, u, v, lu, lv) {
-    // u,v in [-1,1] across whole canvas
-    // lu,lv in [-1,1] inside the current cell
-    const e = effects[rule];
-    let uu = u, vv = v;
-    let alphaMul = 1.0;
-    let colorMode = 0;
-
-    if (!e) return { uu, vv, alphaMul, colorMode };
-
-    switch (e.type) {
-      case "stretchX": {
-        // stretch cells horizontally around their center
-        const s = 1.0 + e.amt;
-        uu = u * s;
-        break;
-      }
-      case "fadeRight": {
-        // make the block fade to transparent within the cell (right side)
-        const t = (lu * 0.5 + 0.5); // 0..1
-        alphaMul *= (1.0 - t);
-        break;
-      }
-      case "chaosColor": {
-        // color chaos from slight coordinate jitter
-        const j = (Math.sin((u*9.7 + v*6.3) * 6.0) * 0.08);
-        uu = u + j;
-        vv = v - j;
-        colorMode = 1;
-        break;
-      }
-      case "swirl": {
-        // swirl inside the cell
-        const r = Math.sqrt(lu*lu + lv*lv);
-        const a = Math.atan2(lv, lu) + e.amt * r * 1.6;
-        const nx = Math.cos(a) * r;
-        const ny = Math.sin(a) * r;
-        // reinsert into global coords slightly
-        uu = u + nx * 0.12;
-        vv = v + ny * 0.12;
-        break;
-      }
-      case "pixelate": {
-        // pixelation: sample shade on a coarse grid
-        const step = e.amt;
-        uu = (Math.floor((u*0.5+0.5)*step)/step)*2-1;
-        vv = (Math.floor((v*0.5+0.5)*step)/step)*2-1;
-        break;
-      }
-      case "wave": {
-        // wavy displacement
-        uu = u + Math.sin((v*7.0 + u*2.0) * 3.0) * 0.08 * e.amt;
-        vv = v + Math.sin((u*6.0) * 2.3) * 0.05 * e.amt;
-        break;
-      }
-      case "holes": {
-        // punch random holes in blocks (stable-ish per-cell)
-        const t = Math.sin((lu*12.1 + lv*9.7) * 3.1);
-        if (t > 0.65) alphaMul *= 0.0;
-        break;
-      }
-      case "outline": {
-        // outline will be handled later by edge detection (flag mode)
-        colorMode = 2;
-        break;
-      }
-      case "angular": {
-        // clip to triangle-ish region inside cell
-        const t = Math.abs(lu) + Math.abs(lv);
-        if (t > 0.95) alphaMul *= 0.0;
-        break;
-      }
-      case "drip": {
-        // smear downward: sample from above
-        vv = v - Math.max(0, lv) * 0.25;
-        break;
-      }
-      case "mirror": {
-        // mirror inside cell
-        uu = (lu < 0 ? u : (u - lu*0.2));
-        break;
-      }
-      case "invert": {
-        colorMode = 3;
-        break;
-      }
-    }
-
-    return { uu, vv, alphaMul, colorMode };
-  }
 
   // render object pixels
   let idx = 0;
@@ -926,47 +819,38 @@ function renderGridObject(ctx, shade, W, H) {
       const cellX0 = (cx / cols) * W;
       const cellX1 = ((cx + 1) / cols) * W;
       const lu = ((fx * cols) - cx) * 2 - 1;
+ 
+      // rule effect
+      const ef = applyEffect(rule, u, v, lu, lv, cx, cy);
 
-      // crisp block alpha + soft edge
+      // base alpha: block edges
       let a = boxAlpha(x + 0.5, y + 0.5, cellX0, cellY0, cellX1, cellY1);
 
-      // rule effect
-      const ef = applyEffect(rule, u, v, lu, lv);
+      // add rule silhouette shaping
+      a *= shapeAlpha(ef.shapeMode, lu, lv, cx, cy);
+
+      // alpha from effect (fade etc)
       a *= ef.alphaMul;
 
-      // sample background shader for the object’s “ink”
-      let [br, bg, bb] = shade(ef.uu, ef.vv);
+      if (a <= 0.0001) {
+        d[idx++] = 0; d[idx++] = 0; d[idx++] = 0; d[idx++] = 0;
+        continue;
+      }
 
-      // foreground color = background color, but pushed brighter + higher saturation
-      let r = br, g = bg, b = bb;
+      let [r, g, b] = shade(ef.uu, ef.vv);
+
+      // your existing lift + sat
       const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-
-      // lift away from mid-gray (prevents blending)
-      const lift = 0.18;            // 0.10–0.30
-      r = clamp01(r + lift);
-      g = clamp01(g + lift);
-      b = clamp01(b + lift);
-
-      // saturation boost
-      const sat = 1.35;             // 1.1–1.7
+      const lift = 0.18;
+      r = clamp01(r + lift); g = clamp01(g + lift); b = clamp01(b + lift);
+      const sat = 1.35;
       r = clamp01(lum + (r - lum) * sat);
       g = clamp01(lum + (g - lum) * sat);
       b = clamp01(lum + (b - lum) * sat);
 
-      // extra color modes
-      if (ef.colorMode === 1) {
-        // chaos color boost
-        const sat = 1.35;
-        const lum = 0.2126*r + 0.7152*g + 0.0722*b;
-        r = clamp01(lum + (r - lum) * sat);
-        g = clamp01(lum + (g - lum) * sat);
-        b = clamp01(lum + (b - lum) * sat);
-      } else if (ef.colorMode === 3) {
-        // invert
-        r = 1 - r; g = 1 - g; b = 1 - b;
-      }
+      // apply material mode
+      [r, g, b] = applyMaterial(ef.materialMode, r, g, b, u, v, lu, lv, cx, cy);
 
-      // final alpha: keep object strong but not neon-white
       const alpha = clamp01(a) * 0.92;
 
       d[idx++] = (r * 255) | 0;
@@ -975,6 +859,249 @@ function renderGridObject(ctx, shade, W, H) {
       d[idx++] = (alpha * 255) | 0;
     }
   }
+  function clamp01(x){ return x<0?0:x>1?1:x; }
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function smoothstep(t){ return t*t*(3-2*t); }
+  function shapeAlpha(shapeMode, lu, lv, cx, cy) {
+    // lu/lv are -1..1 inside cell
+    const r0 = cellRand01(cx, cy, 700);
+    const r1 = cellRand01(cx, cy, 701);
+
+    // base: rectangle
+    let a = 1.0;
+
+    if (shapeMode === 1) {
+      // chamfer corners: cut off corners by distance
+      const t = 0.78 + r0 * 0.12;
+      if (Math.abs(lu) + Math.abs(lv) > t) a = 0.0;
+    }
+
+    if (shapeMode === 2) {
+      // holes: 2–5 circular holes
+      const n = 2 + ((r0 * 4) | 0);
+      for (let k = 0; k < n; k++) {
+        const hx = (cellRandSigned(cx, cy, 800 + k)) * 0.55;
+        const hy = (cellRandSigned(cx, cy, 900 + k)) * 0.55;
+        const rr = 0.18 + cellRand01(cx, cy, 1000 + k) * 0.22;
+        if (Math.hypot(lu - hx, lv - hy) < rr) return 0.0;
+      }
+    }
+
+    if (shapeMode === 3) {
+      // fractured: keep only some shards by slicing lines
+      const ang = r0 * Math.PI;
+      const nx = Math.cos(ang), ny = Math.sin(ang);
+      const cut = (lu * nx + lv * ny);
+      if (cut > (0.15 + r1 * 0.25)) a *= 0.0;
+      // second cut
+      const ang2 = r1 * Math.PI;
+      const nx2 = Math.cos(ang2), ny2 = Math.sin(ang2);
+      const cut2 = (lu * nx2 + lv * ny2);
+      if (cut2 < (-0.10 - r0 * 0.25)) a *= 0.0;
+    }
+
+    if (shapeMode === 4) {
+      // triangle-ish
+      if (Math.abs(lu) + Math.abs(lv) > 0.92) a = 0.0;
+      if (lv > 0.85) a = 0.0;
+    }
+
+    if (shapeMode === 5) {
+      // drip: thinner top, thicker bottom
+      const t = lv * 0.5 + 0.5; // 0 top -> 1 bottom
+      const width = 0.25 + 0.75 * t;
+      if (Math.abs(lu) > width) a = 0.0;
+    }
+
+    return a;
+  }
+  function applyMaterial(materialMode, r, g, b, u, v, lu, lv, cx, cy) {
+    const r0 = cellRand01(cx, cy, 1200);
+    const lum = 0.2126*r + 0.7152*g + 0.0722*b;
+
+    if (materialMode === 1) {
+      // glassy: lighten + mild blue tint
+      r = clamp01(r + 0.10);
+      g = clamp01(g + 0.12);
+      b = clamp01(b + 0.18);
+    }
+
+    if (materialMode === 2) {
+      // glitch/noise: channel shifts
+      const n = (hash2D((u*40)|0, (v*40)|0, (cx*977 + cy*131)>>>0) - 0.5) * 0.35;
+      r = clamp01(r + n);
+      g = clamp01(g - n*0.7);
+      b = clamp01(b + n*0.5);
+    }
+
+    if (materialMode === 3) {
+      // swirl = more saturation
+      const sat = 1.75;
+      r = clamp01(lum + (r - lum) * sat);
+      g = clamp01(lum + (g - lum) * sat);
+      b = clamp01(lum + (b - lum) * sat);
+    }
+
+    if (materialMode === 4) {
+      // stripes/hatch: dark stripes inside cell
+      const stripes = Math.sin((lu * 10 + lv * 4 + r0 * 6.0) * Math.PI);
+      const m = stripes > 0 ? 1.0 : 0.45;
+      r *= m; g *= m; b *= m;
+    }
+
+    if (materialMode === 5) {
+      // cracked veins: dark lines
+      const vein = Math.abs(Math.sin((lu*9 + lv*11 + r0*10) * 3.0));
+      const m = vein < 0.20 ? 0.25 : 1.0;
+      r *= m; g *= m; b *= m;
+    }
+
+    if (materialMode === 6) {
+      // mirrored fold highlight
+      const fold = 1.0 - Math.min(1, Math.abs(lu) * 3.5);
+      r = clamp01(r + fold * 0.15);
+      g = clamp01(g + fold * 0.12);
+      b = clamp01(b + fold * 0.08);
+    }
+
+    if (materialMode === 7) {
+      // invert + posterize
+      r = 1 - r; g = 1 - g; b = 1 - b;
+      const q = 5;
+      r = Math.round(r*q)/q;
+      g = Math.round(g*q)/q;
+      b = Math.round(b*q)/q;
+    }
+
+    return [r, g, b];
+  }
+
+
+
+  // soft box alpha (for nice edges)
+  function boxAlpha(px, py, cx0, cy0, cx1, cy1) {
+    // distance to nearest edge
+    const dx = Math.min(px - cx0, cx1 - px);
+    const dy = Math.min(py - cy0, cy1 - py);
+    const dd = Math.min(dx, dy);
+    // dd in pixels: fade within 'edge'
+    const t = clamp01(dd / edge);
+    return smoothstep(t);
+  }
+
+  function fract(x){ return x - Math.floor(x); }
+
+  function cellRand01(cx, cy, salt = 0) {
+    // stable 0..1 per cell (no flicker), uses your existing hash2D
+    return hash2D(cx, cy, (salt >>> 0));
+  }
+  function cellRandSigned(cx, cy, salt = 0) {
+    return cellRand01(cx, cy, salt) * 2 - 1; // -1..1
+  }
+
+
+  function applyEffect(rule, u, v, lu, lv, cx, cy) {
+    let uu = u, vv = v;
+    let alphaMul = 1.0;
+
+    // how the block shape is cut (0=plain rect)
+    let shapeMode = 0;
+
+    // how the color/material looks
+    let materialMode = 0;
+
+    // useful stable cell params
+    const r0 = cellRand01(cx, cy, 11);
+    const r1 = cellRand01(cx, cy, 22);
+    const r2 = cellRand01(cx, cy, 33);
+
+    switch (rule) {
+      case 1: { // CHAMFER / bevel corners (strong shape difference)
+        shapeMode = 1;
+        break;
+      }
+
+      case 2: { // GLASS FADE: horizontal transparency gradient + slight refraction
+        const t = lu * 0.5 + 0.5; // 0..1
+        alphaMul *= (0.15 + 0.85 * (1.0 - t));
+        uu = u + (lv * 0.08);  // refraction-ish
+        vv = v + (lu * 0.04);
+        materialMode = 1;
+        break;
+      }
+
+      case 3: { // NOISY / glitch material (strong color change)
+        materialMode = 2;
+        // jitter sample coords with stable per-cell phase
+        const ph = r0 * 6.28318;
+        uu = u + Math.sin((u * 10 + v * 6) + ph) * 0.12;
+        vv = v + Math.cos((v * 11 - u * 5) + ph) * 0.12;
+        break;
+      }
+
+      case 4: { // SWIRL inside cell (strong local warp)
+        const r = Math.hypot(lu, lv);
+        const a = Math.atan2(lv, lu) + (0.8 + r0 * 1.6) * r * 2.0;
+        const nx = Math.cos(a) * r;
+        const ny = Math.sin(a) * r;
+        uu = u + nx * 0.20;
+        vv = v + ny * 0.20;
+        materialMode = 3;
+        break;
+      }
+
+      case 5: { // STRIPES / hatch inside the block (very visible)
+        materialMode = 4;
+        break;
+      }
+
+      case 6: { // WAVE / ripples (strong)
+        const ph = r0 * 6.28318;
+        const amp = 0.08 + r1 * 0.10;
+        uu = u + Math.sin(v * 10 + ph) * amp;
+        vv = v + Math.sin(u * 8 + ph * 0.7) * amp * 0.6;
+        break;
+      }
+
+      case 7: { // HOLES: stable “punched” circles per cell (not a sin pattern)
+        shapeMode = 2;
+        break;
+      }
+
+      case 8: { // CRACKED / fractured (cuts + dark veins)
+        shapeMode = 3;
+        materialMode = 5;
+        break;
+      }
+
+      case 9: { // TRIANGLE / angular clip
+        shapeMode = 4;
+        break;
+      }
+
+      case 10: { // DRIP downward (shape stretch + smear)
+        const s = Math.max(0, lv * 0.5 + 0.5);
+        vv = v - s * (0.15 + r0 * 0.25);
+        shapeMode = 5;
+        break;
+      }
+
+      case 11: { // MIRROR inside cell + symmetrical “fold”
+        if (lu > 0) uu = u - lu * 0.35;
+        materialMode = 6;
+        break;
+      }
+
+      case 12: { // INVERT + posterize (very visible)
+        materialMode = 7;
+        break;
+      }
+    }
+
+    return { uu, vv, alphaMul, shapeMode, materialMode };
+  }
+
+
 
   octx.putImageData(img, 0, 0);
 
@@ -1038,7 +1165,6 @@ function renderGridObject(ctx, shade, W, H) {
   ctx.restore();
 
 }
-
 
 
 // 1) Seed -> RNG
@@ -1216,6 +1342,7 @@ function makeStyleShader(seed) {
     return [r, g, b, k];
   };
 }
+
 
 function hashGrid32(grid) {
   // FNV-ish hash, stable in JS 32-bit
