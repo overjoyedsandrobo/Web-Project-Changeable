@@ -128,13 +128,21 @@ function draw() {
   const cellH = canvas.height / rows;
 
   // draw painted rules
-  for (let y = 0; y < rows; y++) {
+ for (let y = 0; y < rows; y++) {
+    const y0 = Math.round(y * cellH);
+    const y1 = Math.round((y + 1) * cellH);
+    const h  = y1 - y0;
+
     for (let x = 0; x < cols; x++) {
       const rule = grid[y][x];
-      if (rule !== 0) {
-        ctx.fillStyle = ruleToFill(rule);
-        ctx.fillRect(x * cellW, y * cellH, cellW, cellH);
-      }
+      if (rule === 0) continue;
+
+      const x0 = Math.round(x * cellW);
+      const x1 = Math.round((x + 1) * cellW);
+      const w  = x1 - x0;
+
+      ctx.fillStyle = ruleToFill(rule);
+      ctx.fillRect(x0, y0, w, h);
     }
   }
 
@@ -1431,36 +1439,56 @@ clearBtn.addEventListener("click", () => {
 });
 
 // --- Events: hover / click / drag paint ---
-canvas.addEventListener("mousemove", (e) => {
+canvas.addEventListener("pointerdown", (e) => {
+  const cell = getCellFromEvent(e);
+  if (!cell) return;
+
+  canvas.setPointerCapture(e.pointerId);
+
+  const isRight = e.button === 2;
+  const isShift = e.shiftKey;
+
+  const cellRule = grid[cell.y][cell.x] | 0;
+
+  // Shift + left = pick rule
+  if (!isRight && isShift) {
+    if (cellRule !== 0) {
+      activeRule = cellRule;
+      renderLegend();
+      draw();
+    }
+    return; // do not paint
+  }
+
+  pushHistory();
+  paintEraseMode = isRight;
+  isPainting = true;
+
+  paintCell(cell.x, cell.y, paintEraseMode);
+  draw();
+});
+
+canvas.addEventListener("pointermove", (e) => {
   hoverCell = getCellFromEvent(e);
 
-  if (isPainting && hoverCell) {
+  // If pointer is captured, we still get events even outside.
+  // Only paint if button still held:
+  if (isPainting && hoverCell && (e.buttons & 1 || e.buttons & 2)) {
     paintCell(hoverCell.x, hoverCell.y, paintEraseMode);
   }
 
   draw();
 });
 
-canvas.addEventListener("mouseleave", () => {
-  hoverCell = null;
+canvas.addEventListener("pointerup", (e) => {
   isPainting = false;
-  draw();
 });
 
-canvas.addEventListener("mousedown", (e) => {
-  const cell = getCellFromEvent(e);
-  if (!cell) return;
-  pushHistory();
-
-  // Left click = paint, Shift+Left = erase
-  // Right click = erase
-  const isRightClick = e.button === 2;
-  paintEraseMode = isRightClick || e.shiftKey;
-
-  isPainting = true;
-  paintCell(cell.x, cell.y, paintEraseMode);
-  draw();
+canvas.addEventListener("pointercancel", (e) => {
+  isPainting = false;
 });
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 window.addEventListener("mouseup", () => {
   isPainting = false;
