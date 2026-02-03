@@ -24,6 +24,10 @@ body {
 header {
     padding: 1.2rem 2rem;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
 }
 
 header h1 {
@@ -36,6 +40,28 @@ header p {
     margin: 0.2rem 0 0;
     color: var(--muted);
     font-size: 0.9rem;
+}
+
+.header-left {
+    min-width: 0;
+}
+
+.header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.header-user {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-right: 0.25rem;
+}
+
+.header-btn {
+    width: auto;
+    padding: 0.4rem 0.75rem;
 }
 
 main {
@@ -229,6 +255,160 @@ details[open] > .collapse-btn::after {
   min-height: 110px;
 }
 
+.input {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  background: #0f0f0f;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  outline: none;
+}
+
+.input:focus {
+  border-color: #3a3a3a;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.segmented-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #101010;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.segmented-item input {
+  accent-color: #3b82f6;
+}
+
+.design-list {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.design-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0f0f0f;
+  cursor: pointer;
+}
+
+.design-item.selected {
+  border-color: #4b5563;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.design-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.modal-card.save-card {
+  width: min(680px, 94vw);
+  overflow: hidden;
+}
+
+.modal-card.save-card .modal-body {
+  overflow: hidden;
+}
+
+.modal-card.save-card .input {
+  background: #121212;
+  border-color: #2f2f2f;
+  padding: 0.75rem 0.8rem;
+  font-size: 1rem;
+}
+
+.modal-card.save-card .input::placeholder {
+  color: #7e7e7e;
+}
+
+.modal-card.load-card {
+  width: min(1200px, 96vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-card.load-card .modal-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.modal-footer {
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+  margin-top: 0.6rem;
+}
+
+.design-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.design-grid.small {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.design-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #101010;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+
+.design-card.selected {
+  border-color: #4b5563;
+  box-shadow: 0 0 0 1px rgba(75, 85, 99, 0.5) inset;
+}
+
+.design-thumb {
+  width: 100%;
+  aspect-ratio: 1.6 / 1;
+  background: #0b0b0b;
+}
+
+.design-card-body {
+  padding: 0.5rem 0.6rem 0.65rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.design-card-title {
+  font-size: 0.9rem;
+}
+
+.design-card-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .legend-item {
   display: flex;
   align-items: center;
@@ -286,6 +466,10 @@ details[open] > .collapse-btn::after {
   display: none;
 }
 
+.hidden {
+  display: none;
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -319,6 +503,17 @@ details[open] > .collapse-btn::after {
   border-bottom: 1px solid var(--border);
   padding-bottom: 0.6rem;
   margin-bottom: 0.8rem;
+}
+
+.modal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn.ghost {
+  background: transparent;
+  border-color: #2a2a2a;
 }
 
 .modal-header h3 {
@@ -405,4 +600,93 @@ details[open] > .collapse-btn::after {
   height: 48px;
   font-size: 1rem;
   border-radius: 12px;
+}
+
+.auth-page {
+  background: radial-gradient(circle at top, #111 0%, #0b0b0b 65%);
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  width: min(420px, 92vw);
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.5rem;
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.35);
+}
+
+.auth-card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.4rem;
+}
+
+.auth-subtitle {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.auth-form {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.auth-form input[type="text"],
+.auth-form input[type="password"] {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  background: #101010;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  outline: none;
+}
+
+.auth-form input[type="text"]:focus,
+.auth-form input[type="password"]:focus {
+  border-color: #3a3a3a;
+}
+
+.auth-submit {
+  margin-top: 0.3rem;
+}
+
+.auth-footer {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.auth-footer a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.auth-footer a:hover {
+  text-decoration: underline;
+}
+
+.auth-flash {
+  margin: 0 0 0.8rem;
+}
+
+.flash {
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+  background: #1a1a1a;
+  border: 1px solid var(--border);
+}
+
+.flash.error {
+  border-color: #5b2d2d;
+  background: #241111;
 }

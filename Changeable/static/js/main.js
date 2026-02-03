@@ -1,6 +1,12 @@
 const canvas = document.getElementById("generation-canvas");
 const ctx = canvas.getContext("2d");
 
+const authFlag = document.body ? document.body.dataset.auth : null;
+window.IS_AUTHENTICATED = authFlag === "true";
+const currentUserId = document.body && document.body.dataset.userId
+  ? Number(document.body.dataset.userId)
+  : null;
+
 const colsInput = document.getElementById("cols");
 const rowsInput = document.getElementById("rows");
 const clearBtn = document.getElementById("clearBtn");
@@ -19,7 +25,21 @@ const showGridEl = document.getElementById("showGrid");
 const seedInput = document.getElementById("seed");
 const saveBtn = document.getElementById("saveBtn");
 const loadBtn = document.getElementById("loadBtn");
-const designData = document.getElementById("designData");
+const designNameInput = document.getElementById("designName");
+const openSaveModalBtn = document.getElementById("openSaveModal");
+const openLoadModalBtn = document.getElementById("openLoadModal");
+const saveModal = document.getElementById("saveModal");
+const loadModal = document.getElementById("loadModal");
+const saveBackdrop = document.getElementById("saveBackdrop");
+const loadBackdrop = document.getElementById("loadBackdrop");
+const saveClose = document.getElementById("saveClose");
+const loadClose = document.getElementById("loadClose");
+const togglePrivateViewBtn = document.getElementById("togglePrivateView");
+const publicGallerySection = document.getElementById("publicGallerySection");
+const privateGallerySection = document.getElementById("privateGallerySection");
+const publicSearchInput = document.getElementById("publicSearch");
+const publicDesignGrid = document.getElementById("publicDesignGrid");
+const privateDesignGrid = document.getElementById("privateDesignGrid");
 const randomizeSeedEl = document.getElementById("randomizeSeed");
 const mirrorXBtn = document.getElementById("mirrorXBtn");
 const mirrorYBtn = document.getElementById("mirrorYBtn");
@@ -45,7 +65,6 @@ const HISTORY_LIMIT = 100;
 const ruleCount = 12
 const ruleColors = Array(ruleCount + 1).fill(null);
 
-const STORAGE_KEY = "changeable_state_v1";
 let saveTimer = null;
 
 let cols = parseInt(colsInput.value, 10);
@@ -330,20 +349,235 @@ function scheduleSaveState() {
   saveTimer = setTimeout(saveState, 120);
 }
 
-function saveState() {
+async function saveState() {
+  if (!window.IS_AUTHENTICATED) return;
   try {
-    localStorage.setItem(STORAGE_KEY, exportDesign());
+    await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(getDesignState()),
+    });
   } catch (e) {
-    // ignore storage errors (quota, private mode)
+    // ignore network/storage errors
   }
 }
 
-function loadState() {
+async function loadState() {
+  if (!window.IS_AUTHENTICATED) return;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) importDesign(raw);
+    const res = await fetch("/api/state");
+    if (!res.ok) return;
+    const payload = await res.json();
+    if (payload && payload.state) importDesign(payload.state);
   } catch (e) {
-    // ignore corrupted storage
+    // ignore corrupted or unavailable data
+  }
+}
+
+async function saveDesignToDb(name, isPublic) {
+  try {
+    const res = await fetch("/api/designs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        is_public: isPublic,
+        state: getDesignStateForGallery(),
+      }),
+    });
+    if (!res.ok) {
+      alert("Save failed.");
+      return;
+    }
+    await refreshDesignGrids();
+    closeSaveModal();
+  } catch (e) {
+    alert("Save failed.");
+  }
+}
+
+async function deleteDesign(id) {
+  try {
+    const res = await fetch(`/api/designs/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      alert("Delete failed.");
+      return;
+    }
+    await refreshDesignGrids();
+  } catch (e) {
+    alert("Delete failed.");
+  }
+}
+
+async function loadDesignFromDb(id) {
+  try {
+    const res = await fetch(`/api/designs/${id}`);
+    if (!res.ok) {
+      alert("Load failed.");
+      return;
+    }
+    const payload = await res.json();
+    if (payload && payload.state) {
+      if (payload.state.ruleColors) delete payload.state.ruleColors;
+      importDesign(payload.state);
+    }
+  } catch (e) {
+    alert("Load failed.");
+  }
+}
+
+async function refreshDesignGrids() {
+  if (!window.IS_AUTHENTICATED) return;
+  await Promise.all([refreshPublicGrid(), refreshPrivateGrid()]);
+}
+
+async function refreshPublicGrid() {
+  if (!publicDesignGrid) return;
+  try {
+    const res = await fetch("/api/designs?scope=public&include_state=1");
+    if (!res.ok) return;
+    const payload = await res.json();
+    const list = payload.designs || [];
+    const query = publicSearchInput ? publicSearchInput.value.trim().toLowerCase() : "";
+    const filtered = query
+      ? list.filter((d) => String(d.name || "").toLowerCase().includes(query))
+      : list;
+    renderDesignGrid(publicDesignGrid, filtered);
+  } catch (e) {
+    // ignore
+  }
+}
+
+async function refreshPrivateGrid() {
+  if (!privateDesignGrid) return;
+  try {
+    const res = await fetch("/api/designs?scope=private&private_only=1&include_state=1");
+    if (!res.ok) return;
+    const payload = await res.json();
+    renderDesignGrid(privateDesignGrid, payload.designs || []);
+  } catch (e) {
+    // ignore
+  }
+}
+
+function renderDesignGrid(container, designs) {
+  container.innerHTML = "";
+  if (!designs.length) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "No designs yet.";
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const d of designs) {
+    const card = document.createElement("div");
+    card.className = "design-card";
+    card.dataset.id = String(d.id);
+
+    const thumb = document.createElement("canvas");
+    thumb.className = "design-thumb";
+    const body = document.createElement("div");
+    body.className = "design-card-body";
+
+    const title = document.createElement("div");
+    title.className = "design-card-title";
+    title.textContent = d.name || `Design ${d.id}`;
+
+    const meta = document.createElement("div");
+    meta.className = "design-card-meta";
+    meta.textContent = d.is_public ? "Public" : "Private";
+
+    body.appendChild(title);
+    body.appendChild(meta);
+    card.appendChild(thumb);
+    card.appendChild(body);
+
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".design-card").forEach((el) => el.classList.remove("selected"));
+      card.classList.add("selected");
+    });
+
+    card.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (!currentUserId || d.user_id !== currentUserId) return;
+      if (!confirm(`Delete "${d.name}"? This cannot be undone.`)) return;
+      deleteDesign(d.id);
+    });
+
+    container.appendChild(card);
+    drawDesignThumbnail(thumb, d.state);
+  }
+}
+
+function drawDesignThumbnail(canvasEl, state) {
+  if (!canvasEl || !state || !state.grid) return;
+  const ctx2 = canvasEl.getContext("2d");
+  const w = 280;
+  const h = 175;
+  canvasEl.width = w;
+  canvasEl.height = h;
+  ctx2.setTransform(1, 0, 0, 1, 0, 0);
+
+  const prev = {
+    cols,
+    rows,
+    grid,
+    ruleColors: ruleColors.slice(),
+  };
+
+  cols = state.cols || (state.grid[0] ? state.grid[0].length : cols);
+  rows = state.rows || state.grid.length;
+  grid = state.grid;
+  if (Array.isArray(state.ruleColors)) {
+    for (let i = 0; i < ruleColors.length; i++) ruleColors[i] = state.ruleColors[i] ?? ruleColors[i];
+  }
+
+  const seed = Number.isFinite(state.seed) ? state.seed : 0;
+  renderAbstractPainting(seed, canvasEl, ctx2, w, h);
+
+  cols = prev.cols;
+  rows = prev.rows;
+  grid = prev.grid;
+  for (let i = 0; i < prev.ruleColors.length; i++) ruleColors[i] = prev.ruleColors[i];
+}
+
+function openSaveModal() {
+  if (!window.IS_AUTHENTICATED) {
+    alert("Please log in to save.");
+    return;
+  }
+  saveModal.classList.remove("hidden");
+  if (designNameInput) {
+    designNameInput.value = "";
+    designNameInput.focus();
+  }
+}
+
+function closeSaveModal() {
+  saveModal.classList.add("hidden");
+}
+
+function openLoadModal() {
+  if (!window.IS_AUTHENTICATED) {
+    alert("Please log in to load.");
+    return;
+  }
+  loadModal.classList.remove("hidden");
+  setLoadView("public");
+  refreshDesignGrids();
+}
+
+function closeLoadModal() {
+  loadModal.classList.add("hidden");
+}
+
+function setLoadView(view) {
+  const isPublic = view === "public";
+  if (publicGallerySection) publicGallerySection.classList.toggle("hidden", !isPublic);
+  if (privateGallerySection) privateGallerySection.classList.toggle("hidden", isPublic);
+  if (togglePrivateViewBtn) {
+    togglePrivateViewBtn.textContent = isPublic ? "My Private" : "Back to Public";
   }
 }
 
@@ -371,8 +605,8 @@ function mulberry32(seed) {
   };
 }
 
-function exportDesign() {
-  return JSON.stringify({
+function getDesignState() {
+  return {
     cols,
     rows,
     seed: clampInt(seedInput.value, 0, 999999999),
@@ -383,11 +617,21 @@ function exportDesign() {
     randomizeSeed: randomizeSeedEl ? !!randomizeSeedEl.checked : false,
     undoStack,
     redoStack,
-  });
+  };
 }
 
-function importDesign(text) {
-  const obj = JSON.parse(text);
+function getDesignStateForGallery() {
+  const state = getDesignState();
+  delete state.ruleColors;
+  return state;
+}
+
+function exportDesign() {
+  return JSON.stringify(getDesignState());
+}
+
+function importDesign(data) {
+  const obj = typeof data === "string" ? JSON.parse(data) : data;
 
   cols = clampInt(obj.cols, 4, 64);
   rows = clampInt(obj.rows, 4, 64);
@@ -668,7 +912,7 @@ function valueNoise(u, v, seed) {
   return lerp(ab, cd, ty); // 0..1
 }
 
-function renderAbstractPainting(seed) {
+function renderAbstractPainting(seed, targetCanvas = previewCanvas, targetCtx = pctx, cssWOverride = null, cssHOverride = null) {
   const shade = makeStyleShader(seed);
 
   // 8 “looks” within the same family
@@ -677,9 +921,9 @@ function renderAbstractPainting(seed) {
   // rng for grain + accents (decoupled from shader seed slightly)
   const rng = mulberry32(((seed ^ 0x9e3779b9) >>> 0) ^ (variant * 0x85ebca6b));
 
-  const rect = previewCanvas.getBoundingClientRect();
-  const cssW = Math.max(1, Math.floor(rect.width));
-  const cssH = Math.max(1, Math.floor(rect.height));
+  const rect = targetCanvas.getBoundingClientRect();
+  const cssW = Math.max(1, Math.floor(cssWOverride ?? rect.width ?? targetCanvas.width));
+  const cssH = Math.max(1, Math.floor(cssHOverride ?? rect.height ?? targetCanvas.height));
 
   // Internal render resolution (cap for speed)
   const maxW = 1400;
@@ -760,21 +1004,23 @@ function renderAbstractPainting(seed) {
   octx.putImageData(img, 0, 0);
 
   // Draw into preview (pctx is already setTransform(dpr,...))
-  pctx.clearRect(0, 0, cssW, cssH);
-  pctx.imageSmoothingEnabled = true;
-  pctx.drawImage(off, 0, 0, cssW, cssH);
-  renderGridObject(pctx, shade, cssW, cssH);
+  targetCtx.clearRect(0, 0, cssW, cssH);
+  targetCtx.imageSmoothingEnabled = true;
+  targetCtx.drawImage(off, 0, 0, cssW, cssH);
+  renderGridObject(targetCtx, shade, cssW, cssH);
 
 
   // Post look pass (keeps background feel but adds variety)
-  applyPostLook(pctx, rng, cssW, cssH, variant);
+  applyPostLook(targetCtx, rng, cssW, cssH, variant);
 
   // Accents (same idea, but variant biases modes + strength)
-  renderAccents(pctx, shade, rng, cssW, cssH, variant);
+  renderAccents(targetCtx, shade, rng, cssW, cssH, variant);
 
-  pctx.globalAlpha = 1;
+  targetCtx.globalAlpha = 1;
 
-  if (previewMeta) previewMeta.textContent = `Seed: ${seed} • Style: expr-tree • v${variant}`;
+  if (previewMeta && targetCanvas === previewCanvas) {
+    previewMeta.textContent = `Seed: ${seed} • Style: expr-tree • v${variant}`;
+  }
 }
 
 function clamp01(x) {
@@ -1676,16 +1922,32 @@ window.addEventListener("mouseup", () => {
 
 
 saveBtn.addEventListener("click", () => {
-  designData.value = exportDesign();
-  saveState();
+  if (!window.IS_AUTHENTICATED) {
+    alert("Please log in to save.");
+    return;
+  }
+  const name = designNameInput ? designNameInput.value.trim() : "";
+  if (!name) {
+    alert("Please enter a name.");
+    return;
+  }
+  const visibility = document.querySelector("input[name='designVisibility']:checked");
+  const isPublic = visibility ? visibility.value === "public" : false;
+  saveDesignToDb(name, isPublic);
 });
 
 loadBtn.addEventListener("click", () => {
-  try {
-    importDesign(designData.value);
-  } catch (e) {
-    alert("Invalid design data.");
+  if (!window.IS_AUTHENTICATED) {
+    alert("Please log in to load.");
+    return;
   }
+  const selected = document.querySelector(".design-card.selected");
+  if (!selected || !selected.dataset.id) {
+    alert("Select a design to load.");
+    return;
+  }
+  loadDesignFromDb(selected.dataset.id);
+  closeLoadModal();
 });
 
 mirrorXBtn.addEventListener("click", mirrorX);
@@ -1703,6 +1965,13 @@ helpBackdrop.addEventListener("click", closeHelp);
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !helpModal.classList.contains("hidden")) {
     closeHelp();
+  }
+});
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (saveModal && !saveModal.classList.contains("hidden")) closeSaveModal();
+    if (loadModal && !loadModal.classList.contains("hidden")) closeLoadModal();
   }
 });
 
@@ -1732,4 +2001,17 @@ generateBtn.addEventListener("click", generatePreview);
 updateHistoryButtons();
 ensureDefaultRuleColors();
 loadState();
+if (openSaveModalBtn) openSaveModalBtn.addEventListener("click", openSaveModal);
+if (openLoadModalBtn) openLoadModalBtn.addEventListener("click", openLoadModal);
+if (saveClose) saveClose.addEventListener("click", closeSaveModal);
+if (loadClose) loadClose.addEventListener("click", closeLoadModal);
+if (saveBackdrop) saveBackdrop.addEventListener("click", closeSaveModal);
+if (loadBackdrop) loadBackdrop.addEventListener("click", closeLoadModal);
+if (publicSearchInput) publicSearchInput.addEventListener("input", refreshPublicGrid);
+if (togglePrivateViewBtn) {
+  togglePrivateViewBtn.addEventListener("click", () => {
+    const showingPublic = publicGallerySection && !publicGallerySection.classList.contains("hidden");
+    setLoadView(showingPublic ? "private" : "public");
+  });
+}
 

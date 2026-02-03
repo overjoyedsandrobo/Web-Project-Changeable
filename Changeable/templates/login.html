@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ project_name }} - Login</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth-page">
+    <div class="auth-card">
+        <h2>Login</h2>
+        <p class="auth-subtitle">Welcome back. Sign in to continue.</p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="auth-flash">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="post" class="auth-form">
+            <label class="label" for="username">Username</label>
+            <input id="username" name="username" type="text" required />
+
+            <label class="label" for="password">Password</label>
+            <input id="password" name="password" type="password" required />
+
+            <button type="submit" class="btn auth-submit">Login</button>
+        </form>
+
+        <div class="auth-footer">
+            <span>Don't have an account?</span>
+            <a href="{{ url_for('signup') }}">Sign up</a>
+        </div>
+    </div>
+</body>
+</html>
