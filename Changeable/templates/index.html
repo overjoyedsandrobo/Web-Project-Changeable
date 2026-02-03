@@ -40,6 +40,8 @@
                 <div class="legend" id="legend"></div>
             </div>
 
+            <input id="ruleColorPicker" type="color" style="position:fixed; width:1px; height:1px; left:-9999px; opacity:0;" />
+
             <div class="control-group">
                 <button id="generateBtn" class="btn">Generate</button>
             </div>
@@ -48,7 +50,6 @@
             <div class="control-group">
                 <label class="label" for="seed">Seed</label>
                 <input id="seed" type="number" min="0" max="999999999" value="123456789" />
-                <div class="hint">Same grid + same seed = same output.</div>
             </div>
 
             <div class="control-group">
@@ -65,7 +66,6 @@
                     <button id="mirrorYBtn" class="btn small">Mirror Y</button>
                     <button id="rotateBtn" class="btn small">Rotate 90°</button>
                 </div>
-                <div class="hint">Transforms the rule grid.</div>
             </div>
             <div class="control-group">
                 <label class="label">History</label>
@@ -95,7 +95,6 @@
                     <button id="exportSvgBtn" class="btn small">Export SVG</button>
                     <button id="exportPngBtn" class="btn small">Export PNG</button>
                 </div>
-                <div class="hint">Exports the generated structure.</div>
             </div>
 
             <div class="controls-bottom-spacer"></div>
@@ -119,6 +118,7 @@
                 <h4>Editing the Grid</h4>
                 <ul>
                 <li><b>Click a rule</b> in the legend to select it.</li>
+                <li><b>Right click a legend item</b> to change its color.</li>
                 <li><b>Left click / drag</b> paints the selected rule.</li>
                 <li><b>Shift + click / drag</b> erases a cell (sets it to 0).</li>
                 <li><b>Right click / drag</b> also erases.</li>

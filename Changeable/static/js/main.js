@@ -43,6 +43,7 @@ const undoStack = [];
 const redoStack = [];
 const HISTORY_LIMIT = 100;
 const ruleCount = 12
+const ruleColors = Array(ruleCount + 1).fill(null);
 
 let cols = parseInt(colsInput.value, 10);
 let rows = parseInt(rowsInput.value, 10);
@@ -54,7 +55,41 @@ let activeRule = 1; // default paint rule
 let paintEraseMode = false;
 
 
+const colorPicker = document.getElementById("ruleColorPicker");
+let ruleColorPicker = document.getElementById("ruleColorPicker");
+if (!ruleColorPicker) {
+  ruleColorPicker = document.createElement("input");
+  ruleColorPicker.type = "color";
+  ruleColorPicker.id = "ruleColorPicker";
+  document.body.appendChild(ruleColorPicker);
+}
 
+// IMPORTANT: do NOT use display:none
+ruleColorPicker.style.position = "fixed";
+ruleColorPicker.style.opacity = "0.01";
+ruleColorPicker.style.width = "1px";
+ruleColorPicker.style.height = "1px";
+ruleColorPicker.style.border = "0";
+ruleColorPicker.style.padding = "0";
+ruleColorPicker.style.zIndex = "999999";
+ruleColorPicker.style.pointerEvents = "auto";
+ruleColorPicker.style.left = "-9999px";
+ruleColorPicker.style.top = "-9999px";
+
+
+// Which rule are we editing right now?
+let colorEditRule = null;
+
+function ensureDefaultRuleColors() {
+  for (let r = 1; r <= ruleCount; r++) {
+    if (!ruleColors[r]) {
+      // default: grayscale like before
+      const t = (r - 1) / Math.max(1, (ruleCount - 1));
+      const v = Math.floor(60 + t * 160);
+      ruleColors[r] = `rgb(${v},${v},${v})`;
+    }
+  }
+}
 // --- Canvas sizing (rectangular-friendly) ---
 function resizeCanvas() {
   const container = document.getElementById("canvas-container");
@@ -108,16 +143,22 @@ function applySettings() {
 
   draw();
   renderLegend(); 
+  ensureDefaultRuleColors();
 }
 
 // --- Rendering ---
 function ruleToFill(rule) {
-  // 0 stays black; others map to grayscale steps
-  if (rule === 0) return "#000000";
-  const t = rule / (ruleCount); // 0..1
-  const v = Math.floor(40 + t * 160); // 40..200
-  return `rgb(${v},${v},${v})`;
+  // if user picked a color, use it
+  if (ruleColors[rule]) return ruleColors[rule];
+
+  // fallback (your grayscale logic)
+  const t = (rule - 1) / Math.max(1, (ruleCount - 1)); // assuming ruleCount = number of rules
+  const v = Math.floor(50 + t * 170);
+  const c = `rgb(${v},${v},${v})`;
+  return c;
 }
+
+
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -178,7 +219,7 @@ function draw() {
 function renderLegend() {
   legendEl.innerHTML = "";
 
-  for (let r = 1; r < ruleCount+1; r++) {
+  for (let r = 1; r <= ruleCount; r++) {
     const item = document.createElement("div");
     item.className = "legend-item" + (r === activeRule ? " selected" : "");
     item.dataset.rule = String(r);
@@ -189,19 +230,86 @@ function renderLegend() {
 
     const label = document.createElement("span");
     label.className = "legend-label";
-    label.textContent = r;
+    label.textContent = `${r}`;
 
     item.appendChild(swatch);
     item.appendChild(label);
 
-    item.addEventListener("click", () => {
+    // Left click = select rule
+    item.addEventListener("click", (e) => {
+      // If user is currently right-clicking, ignore
+      if (e.button === 2) return;
       activeRule = r;
-      renderLegend(); // refresh highlight
+      renderLegend();
+    });
+
+    // Right click = set color
+    item.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Don't allow changing color for "empty" rule if you have one
+      if (r === 0) return;
+      openRuleColorPicker(r, e.clientX, e.clientY);
     });
 
     legendEl.appendChild(item);
   }
 }
+
+function openRuleColorPicker(rule, clientX, clientY) {
+  colorEditRule = rule;
+
+  // set current value (must be hex)
+  ruleColorPicker.value = rgbToHex(ruleToFill(rule));
+
+  // Move it under the cursor for 1 frame so browser allows it
+  ruleColorPicker.style.left = `${clientX}px`;
+  ruleColorPicker.style.top = `${clientY}px`;
+
+  // open native picker in the same user gesture
+  ruleColorPicker.focus({ preventScroll: true });
+  if (typeof ruleColorPicker.showPicker === "function") {
+    ruleColorPicker.showPicker();
+  } else {
+    ruleColorPicker.click();
+  }
+
+  // hide again shortly after (but keep it in DOM)
+  setTimeout(() => {
+    ruleColorPicker.style.left = "-9999px";
+    ruleColorPicker.style.top = "-9999px";
+  }, 0);
+}
+
+
+
+// When user picks a color
+ruleColorPicker.addEventListener("input", () => {
+  if (colorEditRule == null) return;
+  ruleColors[colorEditRule] = ruleColorPicker.value; // already "#rrggbb"
+  renderLegend();
+  draw();
+});
+
+ruleColorPicker.addEventListener("change", () => {
+  colorEditRule = null;
+});
+
+
+
+function rgbToHex(cssColor) {
+  // If already hex
+  if (cssColor.startsWith("#")) return cssColor;
+
+  // If rgb(r,g,b)
+  const m = cssColor.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/i);
+  if (!m) return "#ffffff";
+
+  const r = Number(m[1]), g = Number(m[2]), b = Number(m[3]);
+  return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
 
 function setCell(x, y, value) {
   grid[y][x] = value;
@@ -241,6 +349,7 @@ function exportDesign() {
     rows,
     seed: clampInt(seedInput.value, 0, 999999999),
     grid,
+    ruleColors,
   });
 }
 
@@ -258,10 +367,18 @@ function importDesign(text) {
   grid = obj.grid;
   hoverCell = null;
 
+  // restore colors if present
+  if (Array.isArray(obj.ruleColors)) {
+    for (let i = 0; i < obj.ruleColors.length; i++) {
+      ruleColors[i] = obj.ruleColors[i];
+    }
+  }
+
   renderLegend();
   resizeCanvas();
   draw();
 }
+
 function mirrorX() {
   pushHistory();
   const newGrid = cloneGrid(grid);
@@ -1368,10 +1485,6 @@ function hashGrid32(grid) {
   return h >>> 0;
 }
 
-
-
-
-
 previewClose.addEventListener("click", closePreview);
 previewBackdrop.addEventListener("click", closePreview);
 window.addEventListener("keydown", (e) => {
@@ -1546,4 +1659,5 @@ renderLegend();
 resizeCanvas();
 generateBtn.addEventListener("click", generatePreview);
 updateHistoryButtons();
+ensureDefaultRuleColors();
 
