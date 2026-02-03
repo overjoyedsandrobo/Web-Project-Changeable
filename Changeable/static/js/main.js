@@ -45,6 +45,9 @@ const HISTORY_LIMIT = 100;
 const ruleCount = 12
 const ruleColors = Array(ruleCount + 1).fill(null);
 
+const STORAGE_KEY = "changeable_state_v1";
+let saveTimer = null;
+
 let cols = parseInt(colsInput.value, 10);
 let rows = parseInt(rowsInput.value, 10);
 
@@ -144,6 +147,7 @@ function applySettings() {
   draw();
   renderLegend(); 
   ensureDefaultRuleColors();
+  scheduleSaveState();
 }
 
 // --- Rendering ---
@@ -241,6 +245,7 @@ function renderLegend() {
       if (e.button === 2) return;
       activeRule = r;
       renderLegend();
+      scheduleSaveState();
     });
 
     // Right click = set color
@@ -290,6 +295,7 @@ ruleColorPicker.addEventListener("input", () => {
   ruleColors[colorEditRule] = ruleColorPicker.value; // already "#rrggbb"
   renderLegend();
   draw();
+  scheduleSaveState();
 });
 
 ruleColorPicker.addEventListener("change", () => {
@@ -317,6 +323,28 @@ function setCell(x, y, value) {
 
 function paintCell(x, y, erase) {
   setCell(x, y, erase ? 0 : activeRule);
+}
+
+function scheduleSaveState() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 120);
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, exportDesign());
+  } catch (e) {
+    // ignore storage errors (quota, private mode)
+  }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) importDesign(raw);
+  } catch (e) {
+    // ignore corrupted storage
+  }
 }
 
 
@@ -350,6 +378,11 @@ function exportDesign() {
     seed: clampInt(seedInput.value, 0, 999999999),
     grid,
     ruleColors,
+    showGrid: showGridEl ? !!showGridEl.checked : true,
+    activeRule,
+    randomizeSeed: randomizeSeedEl ? !!randomizeSeedEl.checked : false,
+    undoStack,
+    redoStack,
   });
 }
 
@@ -363,6 +396,12 @@ function importDesign(text) {
   rowsInput.value = rows;
 
   seedInput.value = clampInt(obj.seed ?? 0, 0, 999999999);
+  if (showGridEl && typeof obj.showGrid === "boolean") {
+    showGridEl.checked = obj.showGrid;
+  }
+  if (randomizeSeedEl && typeof obj.randomizeSeed === "boolean") {
+    randomizeSeedEl.checked = obj.randomizeSeed;
+  }
 
   grid = obj.grid;
   hoverCell = null;
@@ -374,9 +413,29 @@ function importDesign(text) {
     }
   }
 
+  if (Number.isFinite(obj.activeRule)) {
+    activeRule = clampInt(obj.activeRule, 1, ruleCount);
+  }
+
+  if (Array.isArray(obj.undoStack)) {
+    undoStack.length = 0;
+    for (const s of obj.undoStack.slice(-HISTORY_LIMIT)) {
+      if (s && Array.isArray(s.grid)) undoStack.push(s);
+    }
+  }
+
+  if (Array.isArray(obj.redoStack)) {
+    redoStack.length = 0;
+    for (const s of obj.redoStack.slice(-HISTORY_LIMIT)) {
+      if (s && Array.isArray(s.grid)) redoStack.push(s);
+    }
+  }
+
   renderLegend();
   resizeCanvas();
   draw();
+  updateHistoryButtons();
+  scheduleSaveState();
 }
 
 function mirrorX() {
@@ -391,6 +450,7 @@ function mirrorX() {
 
   grid = newGrid;
   draw();
+  scheduleSaveState();
 }
 function mirrorY() {
   pushHistory();
@@ -404,6 +464,7 @@ function mirrorY() {
 
   grid = newGrid;
   draw();
+  scheduleSaveState();
 }
 function rotate90() {
   pushHistory();
@@ -430,10 +491,10 @@ function rotate90() {
 
   resizeCanvas();
   draw();
+  scheduleSaveState();
 }
 
 function exportPNG() {
-
   // Export the current canvas as-is
   const url = canvas.toDataURL("image/png");
   const a = document.createElement("a");
@@ -483,6 +544,7 @@ function undo() {
   const prev = undoStack.pop();
   applyState(prev);
   updateHistoryButtons();
+  scheduleSaveState();
 }
 
 function redo() {
@@ -491,6 +553,7 @@ function redo() {
   const next = redoStack.pop();
   applyState(next);
   updateHistoryButtons();
+  scheduleSaveState();
 }
 
 function updateHistoryButtons() {
@@ -1549,6 +1612,7 @@ clearBtn.addEventListener("click", () => {
   grid = createGrid(rows, cols);
   hoverCell = null;
   draw();
+  scheduleSaveState();
 });
 
 // --- Events: hover / click / drag paint ---
@@ -1569,6 +1633,7 @@ canvas.addEventListener("pointerdown", (e) => {
       activeRule = cellRule;
       renderLegend();
       draw();
+      scheduleSaveState();
     }
     return; // do not paint
   }
@@ -1579,6 +1644,7 @@ canvas.addEventListener("pointerdown", (e) => {
 
   paintCell(cell.x, cell.y, paintEraseMode);
   draw();
+  scheduleSaveState();
 });
 
 canvas.addEventListener("pointermove", (e) => {
@@ -1588,6 +1654,7 @@ canvas.addEventListener("pointermove", (e) => {
   // Only paint if button still held:
   if (isPainting && hoverCell && (e.buttons & 1 || e.buttons & 2)) {
     paintCell(hoverCell.x, hoverCell.y, paintEraseMode);
+    scheduleSaveState();
   }
 
   draw();
@@ -1610,6 +1677,7 @@ window.addEventListener("mouseup", () => {
 
 saveBtn.addEventListener("click", () => {
   designData.value = exportDesign();
+  saveState();
 });
 
 loadBtn.addEventListener("click", () => {
@@ -1624,7 +1692,7 @@ mirrorXBtn.addEventListener("click", mirrorX);
 mirrorYBtn.addEventListener("click", mirrorY);
 rotateBtn.addEventListener("click", rotate90);
 
-exportPngBtn.addEventListener("click", exportPNG);
+if (exportPngBtn) exportPngBtn.addEventListener("click", exportPNG);
 
 
 
@@ -1652,6 +1720,9 @@ canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 colsInput.addEventListener("change", applySettings);
 rowsInput.addEventListener("change", applySettings);
 showGridEl.addEventListener("change", draw);
+showGridEl.addEventListener("change", scheduleSaveState);
+seedInput.addEventListener("change", scheduleSaveState);
+if (randomizeSeedEl) randomizeSeedEl.addEventListener("change", scheduleSaveState);
 
 // Init
 grid = createGrid(rows, cols);
@@ -1660,4 +1731,5 @@ resizeCanvas();
 generateBtn.addEventListener("click", generatePreview);
 updateHistoryButtons();
 ensureDefaultRuleColors();
+loadState();
 
