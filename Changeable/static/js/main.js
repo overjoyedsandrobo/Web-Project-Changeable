@@ -40,6 +40,8 @@ const privateGallerySection = document.getElementById("privateGallerySection");
 const publicSearchInput = document.getElementById("publicSearch");
 const publicDesignGrid = document.getElementById("publicDesignGrid");
 const privateDesignGrid = document.getElementById("privateDesignGrid");
+const designContextMenu = document.getElementById("designContextMenu");
+const designDeleteBtn = document.getElementById("designDeleteBtn");
 const randomizeSeedEl = document.getElementById("randomizeSeed");
 const mirrorXBtn = document.getElementById("mirrorXBtn");
 const mirrorYBtn = document.getElementById("mirrorYBtn");
@@ -386,7 +388,8 @@ async function saveDesignToDb(name, isPublic) {
       }),
     });
     if (!res.ok) {
-      alert("Save failed.");
+      const msg = await getErrorMessage(res, "Save failed.");
+      alert(msg);
       return;
     }
     await refreshDesignGrids();
@@ -400,7 +403,8 @@ async function deleteDesign(id) {
   try {
     const res = await fetch(`/api/designs/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      alert("Delete failed.");
+      const msg = await getErrorMessage(res, "Delete failed.");
+      alert(msg);
       return;
     }
     await refreshDesignGrids();
@@ -413,7 +417,8 @@ async function loadDesignFromDb(id) {
   try {
     const res = await fetch(`/api/designs/${id}`);
     if (!res.ok) {
-      alert("Load failed.");
+      const msg = await getErrorMessage(res, "Load failed.");
+      alert(msg);
       return;
     }
     const payload = await res.json();
@@ -424,6 +429,16 @@ async function loadDesignFromDb(id) {
   } catch (e) {
     alert("Load failed.");
   }
+}
+
+async function getErrorMessage(res, fallback) {
+  try {
+    const data = await res.json();
+    if (data && data.error) return data.error;
+  } catch (e) {
+    // ignore
+  }
+  return fallback;
 }
 
 async function refreshDesignGrids() {
@@ -501,13 +516,36 @@ function renderDesignGrid(container, designs) {
     card.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (!currentUserId || d.user_id !== currentUserId) return;
-      if (!confirm(`Delete "${d.name}"? This cannot be undone.`)) return;
-      deleteDesign(d.id);
+      openDesignContextMenu(e.clientX, e.clientY, d);
     });
 
     container.appendChild(card);
     drawDesignThumbnail(thumb, d.state);
   }
+}
+
+let contextDesignId = null;
+
+function openDesignContextMenu(x, y, design) {
+  if (!designContextMenu) return;
+  contextDesignId = design.id;
+  designContextMenu.classList.remove("hidden");
+
+  const rect = designContextMenu.getBoundingClientRect();
+  const margin = 8;
+  const maxX = window.innerWidth - rect.width - margin;
+  const maxY = window.innerHeight - rect.height - margin;
+  const px = Math.max(margin, Math.min(x, maxX));
+  const py = Math.max(margin, Math.min(y, maxY));
+
+  designContextMenu.style.left = `${px}px`;
+  designContextMenu.style.top = `${py}px`;
+}
+
+function closeDesignContextMenu() {
+  if (!designContextMenu) return;
+  designContextMenu.classList.add("hidden");
+  contextDesignId = null;
 }
 
 function drawDesignThumbnail(canvasEl, state) {
@@ -2014,4 +2052,20 @@ if (togglePrivateViewBtn) {
     setLoadView(showingPublic ? "private" : "public");
   });
 }
+
+if (designDeleteBtn) {
+  designDeleteBtn.addEventListener("click", () => {
+    if (!contextDesignId) return;
+    deleteDesign(contextDesignId);
+    closeDesignContextMenu();
+  });
+}
+
+document.addEventListener("mousedown", (e) => {
+  if (!designContextMenu || designContextMenu.classList.contains("hidden")) return;
+  if (designContextMenu.contains(e.target)) return;
+  closeDesignContextMenu();
+});
+
+window.addEventListener("scroll", closeDesignContextMenu);
 

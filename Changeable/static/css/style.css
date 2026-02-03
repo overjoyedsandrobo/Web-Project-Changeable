@@ -409,6 +409,29 @@ details[open] > .collapse-btn::after {
   font-size: 0.75rem;
 }
 
+.design-menu {
+  position: fixed;
+  z-index: 100001;
+  background: #111;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.4rem;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+}
+
+.design-menu.hidden {
+  display: none;
+}
+
+.btn.danger {
+  border-color: #5b2d2d;
+  color: #f3b6b6;
+}
+
+.btn.danger:hover {
+  border-color: #7a3333;
+}
+
 .legend-item {
   display: flex;
   align-items: center;

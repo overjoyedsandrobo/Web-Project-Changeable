@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import or_
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user, login_required
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -188,6 +189,35 @@ def designs():
     state = payload.get("state")
     if state is None:
         return jsonify({"error": "State required"}), 400
+
+    def normalize_state(obj):
+        if isinstance(obj, str):
+            try:
+                obj = json.loads(obj)
+            except Exception:
+                return ""
+        if isinstance(obj, dict):
+            obj = dict(obj)
+            obj.pop("ruleColors", None)
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+
+    # Name must be unique across public + user's designs
+    name_exists = Design.query.filter(
+        or_(Design.is_public == True, Design.user_id == current_user.id),
+        Design.name == name,
+    ).first()
+    if name_exists:
+        return jsonify({"error": "Name already exists"}), 400
+
+    # Design (state) must be unique across public + user's designs
+    incoming_sig = normalize_state(state)
+    if incoming_sig:
+        candidates = Design.query.filter(
+            or_(Design.is_public == True, Design.user_id == current_user.id)
+        ).all()
+        for d in candidates:
+            if normalize_state(d.state_json) == incoming_sig:
+                return jsonify({"error": "Design already exists"}), 400
 
     design = Design()
     design.user_id = current_user.id
