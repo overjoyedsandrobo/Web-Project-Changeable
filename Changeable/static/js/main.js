@@ -42,6 +42,12 @@ const publicDesignGrid = document.getElementById("publicDesignGrid");
 const privateDesignGrid = document.getElementById("privateDesignGrid");
 const designContextMenu = document.getElementById("designContextMenu");
 const designDeleteBtn = document.getElementById("designDeleteBtn");
+const deleteConfirmModal = document.getElementById("deleteConfirmModal");
+const deleteBackdrop = document.getElementById("deleteBackdrop");
+const deleteClose = document.getElementById("deleteClose");
+const deleteCancelBtn = document.getElementById("deleteCancelBtn");
+const deleteConfirmBtn = document.getElementById("deleteConfirmBtn");
+const deleteMessage = document.getElementById("deleteMessage");
 const randomizeSeedEl = document.getElementById("randomizeSeed");
 const mirrorXBtn = document.getElementById("mirrorXBtn");
 const mirrorYBtn = document.getElementById("mirrorYBtn");
@@ -525,6 +531,8 @@ function renderDesignGrid(container, designs) {
 }
 
 let contextDesignId = null;
+let pendingDelete = null;
+let pendingDeleteName = "";
 
 function openDesignContextMenu(x, y, design) {
   if (!designContextMenu) return;
@@ -546,6 +554,21 @@ function closeDesignContextMenu() {
   if (!designContextMenu) return;
   designContextMenu.classList.add("hidden");
   contextDesignId = null;
+}
+
+function openDeleteConfirm(designId, designName) {
+  pendingDelete = designId;
+  pendingDeleteName = designName || "this design";
+  if (deleteMessage) {
+    deleteMessage.textContent = `Delete "${pendingDeleteName}"? This cannot be undone.`;
+  }
+  deleteConfirmModal.classList.remove("hidden");
+}
+
+function closeDeleteConfirm() {
+  pendingDelete = null;
+  pendingDeleteName = "";
+  deleteConfirmModal.classList.add("hidden");
 }
 
 function drawDesignThumbnail(canvasEl, state) {
@@ -2010,6 +2033,7 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     if (saveModal && !saveModal.classList.contains("hidden")) closeSaveModal();
     if (loadModal && !loadModal.classList.contains("hidden")) closeLoadModal();
+    if (deleteConfirmModal && !deleteConfirmModal.classList.contains("hidden")) closeDeleteConfirm();
   }
 });
 
@@ -2056,10 +2080,25 @@ if (togglePrivateViewBtn) {
 if (designDeleteBtn) {
   designDeleteBtn.addEventListener("click", () => {
     if (!contextDesignId) return;
-    deleteDesign(contextDesignId);
+    const selectedCard = document.querySelector(`.design-card[data-id="${contextDesignId}"]`);
+    const nameEl = selectedCard ? selectedCard.querySelector(".design-card-title") : null;
+    const designName = nameEl ? nameEl.textContent : "this design";
+    openDeleteConfirm(contextDesignId, designName);
     closeDesignContextMenu();
   });
 }
+
+if (deleteConfirmBtn) {
+  deleteConfirmBtn.addEventListener("click", () => {
+    if (!pendingDelete) return;
+    deleteDesign(pendingDelete);
+    closeDeleteConfirm();
+  });
+}
+
+if (deleteCancelBtn) deleteCancelBtn.addEventListener("click", closeDeleteConfirm);
+if (deleteClose) deleteClose.addEventListener("click", closeDeleteConfirm);
+if (deleteBackdrop) deleteBackdrop.addEventListener("click", closeDeleteConfirm);
 
 document.addEventListener("mousedown", (e) => {
   if (!designContextMenu || designContextMenu.classList.contains("hidden")) return;

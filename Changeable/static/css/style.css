@@ -432,6 +432,16 @@ details[open] > .collapse-btn::after {
   border-color: #7a3333;
 }
 
+.modal-card.confirm-card {
+  width: min(520px, 92vw);
+}
+
+.confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
 .legend-item {
   display: flex;
   align-items: center;
