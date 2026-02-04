@@ -169,6 +169,18 @@ input[type="number"]:focus {
   border-color: #3a3a3a;
 }
 
+/* Hide number input spinners (Chrome, Edge, Firefox) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .btn {
   width: 100%;
   padding: 0.55rem 0.7rem;
