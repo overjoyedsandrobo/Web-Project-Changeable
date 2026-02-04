@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import json
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import or_
@@ -7,9 +8,10 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, curren
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "dev-changeable-secret"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///changeable.db"
+app.config["SECRET_KEY"] = os.getenv("CHANGEABLE_SECRET", "dev-changeable-secret")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("CHANGEABLE_DB_URI", "sqlite:///changeable.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["TESTING"] = os.getenv("CHANGEABLE_TESTING") == "1"
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -22,7 +24,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
@@ -35,7 +37,7 @@ class UserState(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)
     state_json = db.Column(db.Text, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 class Design(db.Model):
@@ -44,7 +46,7 @@ class Design(db.Model):
     name = db.Column(db.String(120), nullable=False)
     is_public = db.Column(db.Boolean, default=False, nullable=False)
     state_json = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
 
 @login_manager.user_loader
@@ -143,7 +145,7 @@ def user_state():
         db.session.add(state)
     else:
         state.state_json = state_json
-        state.updated_at = datetime.utcnow()
+        state.updated_at = datetime.now(timezone.utc)
 
     db.session.commit()
     return jsonify({"ok": True})
